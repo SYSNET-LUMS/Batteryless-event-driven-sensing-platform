@@ -1,0 +1,43 @@
+# src/services/__init__.py (Final - VROOM Integrated)
+from .agent_service import WasteCollectionAgent
+from .traffic_service import TrafficManager
+from .clustering_service import ClusteringService
+from .routing_service import RoutingService
+from .file_service import FileService
+
+# External services
+from .external.osrm_service import OSRMService
+from .external.vroom_service import VROOMService
+
+# Traffic services  
+from .traffic.dispatch_service import DispatchService
+
+# Routing services
+from .routing.optimization_service import OptimizationService
+
+# Simulation services
+from .simulation.decision_service import DecisionService
+from .simulation.simulation_service import SimulationService
+
+__all__ = [
+    # Core services
+    'WasteCollectionAgent',
+    'TrafficManager', 
+    'ClusteringService',
+    'RoutingService',
+    'FileService',
+    
+    # External services
+    'OSRMService',
+    'VROOMService',
+    
+    # Traffic services
+    'DispatchService',
+    
+    # Routing services  
+    'OptimizationService',
+    
+    # Simulation services
+    'DecisionService',
+    'SimulationService'
+]
