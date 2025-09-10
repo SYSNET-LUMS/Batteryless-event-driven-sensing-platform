@@ -1,4 +1,3 @@
-# src/services/simulation/decision_service.py (Updated with VROOM)
 from typing import Dict, List, Any, Optional
 from services.routing.optimization_service import OptimizationService
 from services.external.vroom_service import VROOMService
@@ -12,7 +11,6 @@ class DecisionService:
         self.optimization_service = optimization_service or OptimizationService(self.vroom_service)
         
         # Note: No more manual assignment tracking - VROOM handles this
-        print("🚀 DecisionService initialized with VROOM optimization")
     
     def get_routing_decision(self, data: Dict) -> List[Dict]:
         """
@@ -34,8 +32,6 @@ class DecisionService:
         clusters = self._get_clusters(bins_data)
         
         if not clusters:
-            print("📍 No clusters found, using single-bin assignments")
-            # Fallback to individual bin processing
             clusters = {i: [bin_data] for i, bin_data in enumerate(bins_data)}
         
         # Use VROOM + Knapsack optimization
@@ -44,12 +40,7 @@ class DecisionService:
         )
         
         routes = optimization_result.get('routes', [])
-        
-        # Log the optimization method used
-        optimization_method = optimization_result.get('optimization_used', 'Unknown')
-        if routes:
-            print(f"🎯 Generated {len(routes)} routes using {optimization_method}")
-        
+  
         return routes
     
     def get_cluster_collection_decision(self, target_bin: Dict, cluster_bins: List[Dict],
@@ -123,7 +114,6 @@ class DecisionService:
                 clusters[cluster_id] = cluster_bins
                 cluster_id += 1
             
-            print(f"📍 Created {len(clusters)} clusters from {len(bins_data)} bins")
             return clusters
             
         except Exception as e:

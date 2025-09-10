@@ -1,4 +1,3 @@
-# src/models/__init__.py
 from .bin import Bin
 from .truck import Truck
 from .depot import Depot

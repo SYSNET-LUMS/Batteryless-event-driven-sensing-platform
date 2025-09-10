@@ -1,4 +1,3 @@
-# src/repositories/system_repository.py
 from typing import List, Optional, Dict, Any
 from .base import BaseRepository
 

@@ -1,4 +1,3 @@
-# src/models/route.py
 from dataclasses import dataclass
 from typing import List
 

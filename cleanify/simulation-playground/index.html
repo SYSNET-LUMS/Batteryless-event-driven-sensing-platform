@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Cleanify - Waste Collection Optimizer</title>
+    
+    <!-- Leaflet CSS -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    
+    <!-- Font Awesome for icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" />
+    
+    <!-- Custom CSS -->
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="app-container">
+        <!-- Left Sidebar - Controls -->
+        <div class="sidebar left-sidebar">
+            <div class="sidebar-header">
+                <h2>Simulation Playground</h2>
+            </div>
+            
+            <!-- Simulation Controls -->
+            <div class="control-section">
+                <h3>Simulation</h3>
+                <div class="control-group">
+                    <div class="button-group">
+                        <button id="startBtn" class="btn btn-success">
+                            <i class="fas fa-play"></i> Start
+                        </button>
+                        <button id="stopBtn" class="btn btn-warning">
+                            <i class="fas fa-pause"></i> Stop
+                        </button>
+                        <button id="resetBtn" class="btn btn-danger">
+                            <i class="fas fa-redo"></i> Reset
+                        </button>
+                    </div>
+                    
+                    <div class="speed-control">
+                        <label for="speedSlider">Speed: <span id="speedValue">1x</span></label>
+                        <input type="range" id="speedSlider" min="1" max="20" value="1" class="slider">
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Save/Load System -->
+            <div class="control-section">
+                <h3><i class="fas fa-save"></i> Save/Load System</h3>
+                <div class="control-group">
+                    <button id="saveSystemBtn" class="btn btn-success">
+                        <i class="fas fa-save"></i> Save Current
+                    </button>
+                    <button id="loadSystemBtn" class="btn btn-primary">
+                        <i class="fas fa-folder-open"></i> Load File
+                    </button>
+                </div>
+                
+                <!-- File list -->
+                <div id="savedFilesList" class="saved-files-list">
+                    <h4>Saved Files:</h4>
+                    <div id="filesList" class="files-container">
+                        <!-- Files will be populated here -->
+                    </div>
+                </div>
+                
+                <!-- Hidden file input -->
+                <input type="file" id="fileInput" accept=".json" style="display: none;">
+            </div>
+
+            <!-- Add Items -->
+            <div class="control-section">
+                <h3>Add Items</h3>
+                <div class="control-group">
+                    <button id="addBinBtn" class="btn btn-primary">
+                        <i class="fas fa-trash"></i> Add Bin
+                    </button>
+                    <button id="addTruckBtn" class="btn btn-primary">
+                        <i class="fas fa-truck"></i> Add Truck
+                    </button>
+                    <button id="addDepotBtn" class="btn btn-primary">
+                        <i class="fas fa-warehouse"></i> Add Depot
+                    </button>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Main Map -->
+        <div class="map-container">
+            <div id="map"></div>
+            <div class="map-overlay">
+                <div class="time-display">
+                    <i class="fas fa-clock"></i>
+                    <span id="simulationTime">07:00:00</span>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Right Sidebar - Stats -->
+        <div class="sidebar right-sidebar">
+            <div class="sidebar-header">
+                <h2><i class="fas fa-chart-bar"></i> Statistics</h2>
+            </div>
+            
+            <!-- Summary Stats -->
+            <div class="stats-section">
+                <h3><i class="fas fa-info-circle"></i> Summary</h3>
+                <div class="stat-item">
+                    <span class="stat-label">Total Bins:</span>
+                    <span id="totalBins" class="stat-value">0</span>
+                </div>
+                <div class="stat-item">
+                    <span class="stat-label">Total Trucks:</span>
+                    <span id="totalTrucks" class="stat-value">0</span>
+                </div>
+                <div class="stat-item">
+                    <span class="stat-label">Active Depots:</span>
+                    <span id="totalDepots" class="stat-value">0</span>
+                </div>
+                <div class="stat-item">
+                    <span class="stat-label">Collections Today:</span>
+                    <span id="collectionsToday" class="stat-value">0</span>
+                </div>
+            </div>
+            
+            <!-- Traffic Status -->
+            <div class="stats-section">
+                <h3><i class="fas fa-traffic-light"></i> Traffic Status</h3>
+                <div class="stat-item">
+                    <span class="stat-label">Current Time:</span>
+                    <span id="trafficTime" class="stat-value">07:00</span>
+                </div>
+                <div class="stat-item">
+                    <span class="stat-label">Traffic Level:</span>
+                    <span id="trafficLevel" class="stat-value traffic-light">Light</span>
+                </div>
+                <div class="stat-item">
+                    <span class="stat-label">Density Factor:</span>
+                    <span id="trafficDensity" class="stat-value">1.0x</span>
+                </div>
+                <div id="waitingTrucks" class="waiting-trucks-info">
+                    <!-- Waiting trucks will be shown here -->
+                </div>
+            </div>
+
+            <!-- Bin Status -->
+            <div class="stats-section">
+                <h3><i class="fas fa-trash"></i> Bin Status</h3>
+                <div id="binsList" class="items-list">
+                    <!-- Bins will be populated here -->
+                </div>
+            </div>
+            
+            <!-- Truck Status -->
+            <div class="stats-section">
+                <h3><i class="fas fa-truck"></i> Truck Status</h3>
+                <div id="trucksList" class="items-list">
+                    <!-- Trucks will be populated here -->
+                </div>
+            </div>
+            
+            <!-- Collection Queue -->
+            <div class="stats-section">
+                <h3><i class="fas fa-list"></i> Collection Queue</h3>
+                <div id="collectionQueue" class="items-list">
+                    <!-- Collection queue will be populated here -->
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Edit Modal -->
+    <div id="editModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3 id="modalTitle">Edit Properties</h3>
+                <span class="close">&times;</span>
+            </div>
+            <div class="modal-body">
+                <div id="modalContent">
+                    <!-- Dynamic content based on item type -->
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button id="saveBtn" class="btn btn-success">Save</button>
+                <button id="cancelBtn" class="btn btn-secondary">Cancel</button>
+                <button id="deleteBtn" class="btn btn-danger">Delete</button>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Leaflet JS -->
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    
+    <!-- Custom JS -->
+    <script src="script.js"></script>
+</body>
+</html>

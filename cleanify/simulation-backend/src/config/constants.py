@@ -1,6 +1,3 @@
-# src/config/constants.py
-"""Application constants"""
-
 ITEM_CONFIGS = {
     'bin': {
         'id_prefix': 'BIN_',

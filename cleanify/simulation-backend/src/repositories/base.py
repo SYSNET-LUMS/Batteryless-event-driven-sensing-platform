@@ -1,4 +1,3 @@
-# src/repositories/base.py
 from typing import List, Optional, Dict, Any
 from abc import ABC, abstractmethod
 

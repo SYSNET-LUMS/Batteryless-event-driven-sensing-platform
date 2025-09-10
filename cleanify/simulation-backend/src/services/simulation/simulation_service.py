@@ -1,4 +1,3 @@
-# src/services/simulation/simulation_service.py
 from typing import Dict, List, Optional
 from services.external.osrm_service import OSRMService
 from services.traffic_service import TrafficManager
@@ -10,6 +9,8 @@ class SimulationService:
         self.osrm_service = osrm_service or OSRMService()
         self.traffic_manager = TrafficManager()
         self.simulation_start_hour = 7
+
+        self.travel_time_cache = {}
     
     def calculate_dynamic_thresholds(self, bins_data: List[Dict], 
                                    simulation_time_seconds: float,
@@ -28,10 +29,9 @@ class SimulationService:
                     bin_data['dynamic_threshold'] = bin_data.get('threshold', 80)
                 
                 updated_bins.append(bin_data)
-                print("dynamic threshold", bin_data['dynamic_threshold'])
                 
             except Exception as e:
-                print(f"⚠️ Error calculating threshold for {bin_data.get('id')}: {e}")
+                print(f"Error calculating threshold for {bin_data.get('id')}: {e}")
                 bin_data['dynamic_threshold'] = bin_data.get('threshold', 80)
                 updated_bins.append(bin_data)
                 
@@ -139,17 +139,24 @@ class SimulationService:
         except Exception as e:
             print(f"⚠️ Dynamic threshold calculation error: {e}")
             return bin_data.get('threshold', 80)
-    
+  
     def _get_travel_time_to_depot(self, bin_data: Dict, depot_data: Dict) -> float:
-        """Get travel time from bin to depot in hours"""
+        """Get travel time from bin to depot in hours (cached)"""
+        # Create cache key from coordinates
+        cache_key = f"{bin_data['lat']},{bin_data['lng']}->{depot_data['lat']},{depot_data['lng']}"
+        
+        # Return cached value if exists
+        if cache_key in self.travel_time_cache:
+            return self.travel_time_cache[cache_key]
+        
         try:
-            # Try OSRM first
+            # Try OSRM first (only called once per bin-depot pair)
             travel_time_min = self.osrm_service.get_travel_time_with_traffic(
                 bin_data['lat'], bin_data['lng'],
                 depot_data['lat'], depot_data['lng'],
                 traffic_multiplier=1.0
             )
-            return travel_time_min / 60  # Convert to hours
+            travel_time_hours = travel_time_min / 60
             
         except:
             # Fallback calculation
@@ -158,7 +165,11 @@ class SimulationService:
                 bin_data['lat'], bin_data['lng'],
                 depot_data['lat'], depot_data['lng']
             )
-            return distance_km / 30  # 30 km/h average in city
+            travel_time_hours = distance_km / 30  # 30 km/h average in city
+        
+        # Cache the result
+        self.travel_time_cache[cache_key] = travel_time_hours
+        return travel_time_hours
     
     def _get_traffic_level_description(self, density: float) -> str:
         """Convert traffic density to human-readable description"""

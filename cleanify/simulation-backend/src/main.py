@@ -9,10 +9,11 @@ from api.app import create_app
 from config.settings import Config
 
 logging.basicConfig(
-    level=logging.INFO,
+    level=logging.WARNING,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger(__name__)
+logging.getLogger('werkzeug').setLevel(logging.ERROR)
 
 def main():
     """Main entry point for the application"""

@@ -75,9 +75,7 @@ class VROOMService:
         for i, bin_data in enumerate(selected_bins):
             job = {
                 "id": i,
-                "location": [bin_data['lng'], bin_data['lat']],  # VROOM uses [lng, lat]
-                "service": 300,  # 5 minutes collection time in seconds
-                # "delivery": [1],  # Simple delivery amount (capacity already handled by knapsack)
+                "location": [bin_data['lng'], bin_data['lat']],
                 "priority": self._get_vroom_priority(bin_data)
             }
             jobs.append(job)
@@ -86,10 +84,6 @@ class VROOMService:
         vroom_problem = {
             "vehicles": vehicles,
             "jobs": jobs,
-            "options": {
-                "g": True,  # Include geometry in response
-                "c": True,  # Include cost details
-            }
         }
         
         return vroom_problem
@@ -193,6 +187,6 @@ class VROOMService:
                     json=test_problem,
                     timeout=2
                 )
-                return response.status_code in [200, 400]  # 400 is acceptable for empty problem
+                return response.status_code in [200, 400]
             except:
                 return False

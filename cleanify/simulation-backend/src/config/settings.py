@@ -1,4 +1,3 @@
-# src/config/settings.py (Updated with VROOM)
 import os
 from dataclasses import dataclass
 
@@ -8,7 +7,7 @@ class Config:
     # Server settings
     HOST: str = os.getenv('HOST', '0.0.0.0')
     PORT: int = int(os.getenv('PORT', 5001))
-    DEBUG: bool = os.getenv('DEBUG', 'False').lower() == 'true'
+    DEBUG: bool = False
     
     # External routing services
     OSRM_URL: str = os.getenv('OSRM_URL', 'http://localhost:5000')

@@ -1,4 +1,3 @@
-# src/models/depot.py
 from dataclasses import dataclass
 from .base import BaseModel
 

@@ -1,4 +1,3 @@
-# src/utils/__init__.py
 from .distance import calculate_haversine_distance, calculate_distance_km
 
 __all__ = [

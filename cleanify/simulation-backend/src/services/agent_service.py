@@ -1,4 +1,3 @@
-# src/services/agent_service.py (Updated with VROOM)
 from typing import Dict, List, Optional, Any
 from services.simulation.decision_service import DecisionService
 from services.simulation.simulation_service import SimulationService
@@ -25,18 +24,12 @@ class WasteCollectionAgent:
         # Cache for clusters
         self.cached_clusters = None
         self.cached_bin_count = 0
-        
-        print("🚀 WasteCollectionAgent initialized with VROOM optimization")
-    
+            
     def get_ai_decision(self, decision_type: str, data: Dict) -> Any:
         """Main AI decision entry point with VROOM optimization"""
         if decision_type == "truck_routing":
             # Enhanced with VROOM + Knapsack + Clustering workflow
             routing_result = self.decision_service.get_routing_decision(data)
-            
-            # Add system info
-            vroom_status = self.decision_service.check_vroom_availability()
-            print(f"🎯 Routing decision using {vroom_status['optimization_method']}")
             
             return routing_result
         else:
@@ -73,15 +66,12 @@ class WasteCollectionAgent:
         if (self.cached_clusters is None or 
             len(bins_data) != self.cached_bin_count):
             
-            print(f"🔄 Creating clusters for {len(bins_data)} bins...")
             distance_matrix = self.clustering_service.create_bin_distance_matrix(bins_data)
             self.cached_clusters = self.clustering_service.create_clusters_dbscan(
                 bins_data, distance_matrix, eps_meters=300, min_samples=2
             )
             self.cached_bin_count = len(bins_data)
-            
-            print(f"📍 Created {len(self.cached_clusters)} clusters")
-        
+                    
         return self.cached_clusters
     
     def calculate_dynamic_threshold(self, bin_data: Dict, simulation_time_seconds: float, 
@@ -98,7 +88,6 @@ class WasteCollectionAgent:
     # Simplified delegation methods (VROOM handles assignments)
     def reset_assignments(self):
         """No longer needed - VROOM handles all assignments optimally"""
-        print("ℹ️ Manual assignment reset not needed with VROOM")
         pass
     
     def is_bin_assigned(self, bin_id: str) -> bool:

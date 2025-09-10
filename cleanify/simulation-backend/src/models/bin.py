@@ -1,4 +1,3 @@
-# src/models/bin.py
 from dataclasses import dataclass
 from typing import Optional, List
 from .base import BaseModel

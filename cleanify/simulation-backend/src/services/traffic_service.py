@@ -1,4 +1,3 @@
-# src/services/traffic_service.py
 from typing import Dict, Optional
 from config.constants import BIN_TRAFFIC_PROFILES
 

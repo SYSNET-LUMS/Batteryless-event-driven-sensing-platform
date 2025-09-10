@@ -1,4 +1,3 @@
-# src/services/external/osrm_service.py
 import requests
 from typing import Dict, List, Optional, Tuple
 from config.settings import Config
