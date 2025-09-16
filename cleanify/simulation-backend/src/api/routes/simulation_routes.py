@@ -48,21 +48,22 @@ def simulation_step():
         # Update bin fill levels
         bins = repo.get_bins()
         bins_that_hit_threshold = []
+
+        # Pre-compute dynamic thresholds for all bins in a neighbor-aware way
+        if agent and repo.get_depots():
+            try:
+                depot = repo.get_depots()[0]
+                # This call updates each bin's dynamic_threshold in-place using neighbor context
+                agent.simulation_service.calculate_dynamic_thresholds(bins, simulation_time, depot)
+            except Exception as e:
+                print(f"⌨ Error calculating dynamic thresholds: {e}")
         
         for bin_item in bins:
             try:
                 old_fill = bin_item['fillLevel']
                 
-                # Calculate dynamic threshold
-                if agent and repo.get_depots():
-                    depot = repo.get_depots()[0]
-                    old_dynamic_threshold = agent.calculate_dynamic_threshold(
-                        bin_item, simulation_time, depot
-                    )
-                    bin_item['dynamic_threshold'] = old_dynamic_threshold
-                else:
-                    old_dynamic_threshold = bin_item.get('threshold', 80)
-                    bin_item['dynamic_threshold'] = old_dynamic_threshold
+                # Use already computed dynamic threshold if present; otherwise fallback to static threshold
+                old_dynamic_threshold = bin_item.get('dynamic_threshold', bin_item.get('threshold', 80))
                 
                 # Update fill level
                 hours_passed = time_delta / 3600

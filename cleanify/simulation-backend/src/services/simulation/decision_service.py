@@ -12,7 +12,7 @@ class DecisionService:
         
         # Note: No more manual assignment tracking - VROOM handles this
     
-    def get_routing_decision(self, data: Dict) -> List[Dict]:
+    def get_routing_decision(self, data: Dict, current_time: float = None) -> List[Dict]:
         """
         Main routing decision using VROOM + Knapsack + Clustering workflow
         
@@ -36,7 +36,8 @@ class DecisionService:
         
         # Use VROOM + Knapsack optimization
         optimization_result = self.optimization_service.optimize_truck_routes_with_vroom(
-            trucks_data, clusters, depot_data
+            trucks_data, clusters, depot_data, current_time,
+            preferred_bin_ids=data.get('preferred_bin_ids')
         )
         
         routes = optimization_result.get('routes', [])
@@ -44,24 +45,92 @@ class DecisionService:
         return routes
     
     def get_cluster_collection_decision(self, target_bin: Dict, cluster_bins: List[Dict],
-                                     truck_capacity: float, current_load: float) -> List[Dict]:
+                                     truck_capacity: float, current_load: float,
+                                     simulation_time: float = None,
+                                     all_bins: List[Dict] = None,
+                                     collection_queue: List[str] = None) -> List[Dict]:
         """
         Get optimal bin collection from cluster using knapsack
         (This method still used for individual truck's cluster collection)
         """
         remaining_capacity = truck_capacity - current_load
         
-        # Use optimization service for knapsack selection
+        # Build augmented candidate set:
+        # - bins that already need collection
+        # - bins near target that are about to reach DT soon (<= 1h) or within 5% of DT
+        def needs_collection(b: Dict) -> bool:
+            try:
+                return self.optimization_service._needs_collection(b, simulation_time)
+            except Exception:
+                return False
+
+        def time_to_threshold_hours(b: Dict) -> float:
+            try:
+                fill_level = b.get('fillLevel', 0)
+                capacity = b.get('capacity', 500)
+                fill_rate = b.get('fillRate', 0)
+                threshold = b.get('dynamic_threshold', b.get('threshold', 80))
+                if fill_level >= threshold:
+                    return 0.0
+                if fill_rate <= 0:
+                    return float('inf')
+                liters_needed = max(0.0, ((threshold - fill_level) / 100.0) * capacity)
+                return liters_needed / fill_rate
+            except Exception:
+                return float('inf')
+
+        def is_nearby(b: Dict, radius_km: float = 0.5) -> bool:
+            try:
+                d = self._calculate_distance(
+                    target_bin['lat'], target_bin['lng'], b['lat'], b['lng']
+                )
+                return d <= radius_km
+            except Exception:
+                return False
+
+        threshold_slack = 5.0  # percent
+        soon_hours = 1.0
+        radius_km = 0.5
+
+        # Build candidate set: all bins in the collection queue (if provided) that are nearby and need collection
+        expanded_candidates = []
+        seen = set()
+        # Use all_bins and collection_queue if provided, else fallback to cluster_bins
+        candidate_bins = cluster_bins or []
+        if all_bins and collection_queue:
+            candidate_bins = [b for b in all_bins if b.get('id') in collection_queue]
+
+        for b in candidate_bins:
+            if b.get('id') in seen:
+                continue
+            # Only consider bins within radius of target_bin
+            if is_nearby(b, radius_km):
+                if needs_collection(b):
+                    expanded_candidates.append(b)
+                    seen.add(b.get('id'))
+                    continue
+                # Consider near-threshold, nearby bins
+                th = b.get('dynamic_threshold', b.get('threshold', 80))
+                fl = b.get('fillLevel', 0)
+                if fl >= (th - threshold_slack) or time_to_threshold_hours(b) <= soon_hours:
+                    expanded_candidates.append(b)
+                    seen.add(b.get('id'))
+
+        # Ensure target_bin is included in candidates for ordering context
+        if target_bin and target_bin.get('id') not in seen:
+            expanded_candidates.insert(0, target_bin)
+
+        # Use optimization service for knapsack selection on expanded set
         selected_bins = self.optimization_service._select_optimal_bins_from_cluster(
-            cluster_bins, remaining_capacity
+            expanded_candidates, remaining_capacity, simulation_time, bypass_needs_check=True
         )
-        
+
         # Include target bin if not already selected
         result_bins = [target_bin]
         for bin_data in selected_bins:
             if bin_data['id'] != target_bin['id']:
                 result_bins.append(bin_data)
-        
+
         return result_bins
     
     def check_vroom_availability(self) -> Dict:

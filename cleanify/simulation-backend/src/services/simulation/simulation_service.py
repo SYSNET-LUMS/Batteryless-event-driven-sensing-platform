@@ -15,27 +15,79 @@ class SimulationService:
     def calculate_dynamic_thresholds(self, bins_data: List[Dict], 
                                    simulation_time_seconds: float,
                                    depot_data: Optional[Dict] = None) -> List[Dict]:
-        """Calculate dynamic thresholds for all bins"""
+        """Calculate dynamic thresholds for all bins with smooth, urgency-weighted neighbor adjustment"""
         updated_bins = []
-        
+        from utils.distance import calculate_distance_km
+
+        # Precompute urgency for all bins
+        bin_urgencies = {}
+        for b in bins_data:
+            try:
+                # Use fill level, fill rate, and time to overflow for urgency
+                fill = b.get('fillLevel', 0)
+                rate = b.get('fillRate', 0)
+                cap = b.get('capacity', 500)
+                threshold = b.get('dynamic_threshold', b.get('threshold', 80))
+                time_to_overflow = self._time_to_threshold_hours(b, 100)
+                # Simple urgency: weighted sum
+                urgency = 0.5 * (fill / 100) + 0.3 * (rate / 50) + 0.2 * (max(0, 8 - time_to_overflow) / 8)
+                bin_urgencies[b['id']] = urgency
+            except Exception:
+                bin_urgencies[b['id']] = 0.5
+
         for bin_data in bins_data:
             try:
+                # 1) Base DT using travel time, traffic and safety buffer
                 if depot_data:
-                    threshold = self._calculate_single_dynamic_threshold(
+                    base_dt = self._calculate_single_dynamic_threshold(
                         bin_data, simulation_time_seconds, depot_data
                     )
-                    bin_data['dynamic_threshold'] = threshold
                 else:
-                    bin_data['dynamic_threshold'] = bin_data.get('threshold', 80)
-                
+                    base_dt = bin_data.get('threshold', 80)
+
+                # 2) Neighbor-aware adjustment
+                radius_km = 0.5
+                soon_hours = 1.0
+                threshold_slack = 5.0
+
+                # Find neighbors that are close to threshold or will reach soon
+                neighbor_scores = []
+                for other in bins_data:
+                    if other is bin_data:
+                        continue
+                    d_km = calculate_distance_km(
+                        bin_data['lat'], bin_data['lng'], other['lat'], other['lng']
+                    )
+                    if d_km > radius_km:
+                        continue
+                    other_dt = other.get('dynamic_threshold', other.get('threshold', 80))
+                    t_to_dt = self._time_to_threshold_hours(other, other_dt)
+                    fill = other.get('fillLevel', 0)
+                    # Score: proximity * urgency * (near threshold or soon)
+                    proximity = max(0.0, 1.0 - (d_km / radius_km))
+                    near_thresh = 1.0 if (fill >= (other_dt - threshold_slack) or t_to_dt <= soon_hours) else 0.0
+                    score = proximity * bin_urgencies.get(other['id'], 0.5) * near_thresh
+                    if score > 0:
+                        neighbor_scores.append(score)
+
+                # Aggregate neighbor influence
+                if neighbor_scores:
+                    # Use a smooth function: reduction = max(3, min(12, 10 * sigmoid(sum)))
+                    import math
+                    agg = sum(neighbor_scores)
+                    # Sigmoid squashes large values smoothly
+                    reduction = 3.0 + 9.0 * (1 / (1 + math.exp(-agg + 1.5)))
+                    adjusted_dt = max(50.0, min(95.0, base_dt - reduction))
+                else:
+                    adjusted_dt = base_dt
+
+                bin_data['dynamic_threshold'] = adjusted_dt
                 updated_bins.append(bin_data)
-                
             except Exception as e:
                 print(f"Error calculating threshold for {bin_data.get('id')}: {e}")
                 bin_data['dynamic_threshold'] = bin_data.get('threshold', 80)
                 updated_bins.append(bin_data)
-                
-        
+
         return updated_bins
     
     def update_bin_fill_levels(self, bins_data: List[Dict], 
@@ -170,6 +222,23 @@ class SimulationService:
         # Cache the result
         self.travel_time_cache[cache_key] = travel_time_hours
         return travel_time_hours
+
+    def _time_to_threshold_hours(self, bin_data: Dict, target_threshold: float) -> float:
+        """Estimate hours until bin reaches a given threshold.
+        Returns inf if fillRate <= 0. Uses simple linear projection.
+        """
+        try:
+            fill_level = bin_data.get('fillLevel', 0)
+            capacity = bin_data.get('capacity', 500)
+            fill_rate = bin_data.get('fillRate', 0.0)
+            if fill_level >= target_threshold:
+                return 0.0
+            if fill_rate <= 0:
+                return float('inf')
+            liters_needed = max(0.0, ((target_threshold - fill_level) / 100.0) * capacity)
+            return liters_needed / fill_rate
+        except Exception:
+            return float('inf')
     
     def _get_traffic_level_description(self, density: float) -> str:
         """Convert traffic density to human-readable description"""

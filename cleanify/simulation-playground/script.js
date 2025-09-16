@@ -274,6 +274,9 @@ async function updateBackendPosition(item, type) {
             dataToSend.capacity = item.capacity;
             dataToSend.fillRate = item.fillRate;
             dataToSend.threshold = item.threshold;
+            if (item.lastCollection !== undefined) {
+                dataToSend.lastCollection = item.lastCollection;
+            }
         } else if (type === 'truck') {
             dataToSend.capacity = item.capacity;
             dataToSend.speed = item.speed;
@@ -431,6 +434,15 @@ function handleRouteCompletion(truck, routeType) {
 
         hideItemRoute(truck, 'return');
         console.log(`${truck.id} completed return route`);
+
+        // If there is a pending route (remaining cluster bins), resume immediately
+        if (truck.pendingRoute && truck.pendingRoute.length > 0) {
+            const pending = truck.pendingRoute;
+            truck.pendingRoute = null;
+            // Dispatch to remaining bins in the same cluster sequence
+            assignTruckToMultipleBins(truck, pending);
+            return; // exit early; assignTruckToMultipleBins sets status/travel
+        }
     } else {
         truck.lat = truck.targetBin.lat;
         truck.lng = truck.targetBin.lng;
@@ -704,6 +716,29 @@ async function performCollection(truck) {
     collectionsToday++;
 
     console.log(`✅ ${truck.id} collected ${bin.id} (${wasteAmount.toFixed(0)}L)`);
+
+    // If we already have a planned sequence of cluster bins, continue with it first
+    if (Array.isArray(truck.clusterBins) && truck.clusterBins.length > 0) {
+        // Remove the bin we just collected from the plan
+        truck.clusterBins = truck.clusterBins.filter(b => b.id !== bin.id);
+
+        while (truck.clusterBins.length > 0) {
+            const nextPlanned = truck.clusterBins[0];
+            const nextAmount = (nextPlanned.fillLevel / 100) * nextPlanned.capacity;
+            if (truck.currentLoad + nextAmount <= truck.capacity) {
+                truck.targetBin = nextPlanned;
+                truck.status = 'traveling';
+                await assignTruckToRoute(truck, nextPlanned);
+                console.log(`🚛 ${truck.id} continuing to planned bin: ${nextPlanned.id}`);
+                return; // continue journey within cluster
+            } else {
+                // Can't fit next planned bin; store remaining plan for after dump
+                truck.pendingRoute = truck.clusterBins.map(b => b.id);
+                truck.clusterBins = null;
+                break; // proceed to return to depot below
+            }
+        }
+    }
     
     // Check for other bins in cluster to collect
     try {
@@ -713,33 +748,51 @@ async function performCollection(truck) {
             body: JSON.stringify({
                 truck_id: truck.id,
                 target_bin_id: bin.id,
-                current_load: truck.currentLoad
+                current_load: truck.currentLoad,
+                simulation_time: simulationTime
             })
         });
         
         const data = await response.json();
         
-        if (data.status === 'success' && data.bins_to_collect && data.bins_to_collect.length > 1) {
-            // Find next bin to collect (skip the one we just collected)
-            const nextBin = data.bins_to_collect.find(b => 
-                b.id !== bin.id && 
-                items.bins.find(localBin => localBin.id === b.id)
-            );
-            console.log("Cluster bins from backend:", data.bins_to_collect);
+        if (data.status === 'success' && Array.isArray(data.bins_to_collect) && data.bins_to_collect.length > 1) {
+            // Build full sequence from backend (preserve order), excluding the one just collected
+            const allIds = data.bins_to_collect.map(b => b.id);
+            const remainingIds = allIds.filter(id => id !== bin.id);
+            const remainingBins = remainingIds
+                .map(id => items.bins.find(localBin => localBin.id === id))
+                .filter(Boolean);
+            console.log("Cluster bins from backend:", remainingIds);
 
-            if (nextBin) {
-                const localNextBin = items.bins.find(b => b.id === nextBin.id);
-                if (localNextBin) {
-                    // Check if truck has capacity
-                    const nextWasteAmount = (localNextBin.fillLevel / 100) * localNextBin.capacity;
-                    if (truck.currentLoad + nextWasteAmount <= truck.capacity) {
-                        truck.targetBin = localNextBin;
-                        truck.status = 'traveling';
-                        await assignTruckToRoute(truck, localNextBin);
-                        console.log(`🚛 ${truck.id} going to next cluster bin: ${localNextBin.id}`);
-                        return;
-                    }
+            // Determine which of these can fit before needing a dump
+            const feasibleBins = [];
+            let tempLoad = truck.currentLoad;
+            for (const cand of remainingBins) {
+                const amt = (cand.fillLevel / 100) * cand.capacity;
+                if (tempLoad + amt <= truck.capacity) {
+                    feasibleBins.push(cand);
+                    tempLoad += amt;
+                } else {
+                    break; // first that doesn't fit -> stop here
                 }
+            }
+
+            const overflowBins = remainingBins.slice(feasibleBins.length);
+
+            if (overflowBins.length > 0) {
+                // Store the overflow to resume after dumping at depot
+                truck.pendingRoute = overflowBins.map(b => b.id);
+            }
+
+            if (feasibleBins.length > 0) {
+                // Save plan locally so we can continue without extra backend calls
+                truck.clusterBins = feasibleBins;
+                const next = feasibleBins[0];
+                truck.targetBin = next;
+                truck.status = 'traveling';
+                await assignTruckToRoute(truck, next);
+                console.log(`🚛 ${truck.id} going to next cluster bin: ${next.id}`);
+                return;
             }
         }
     } catch (error) {

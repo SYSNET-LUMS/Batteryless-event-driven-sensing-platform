@@ -73,6 +73,7 @@ def check_urgent_bins():
         truck_id = data.get('truck_id')
         target_bin_id = data.get('target_bin_id')
         current_load = data.get('current_load', 0)
+        simulation_time = data.get('simulation_time', 0)
         
         bins = repo.get_bins()
         trucks = repo.get_trucks()
@@ -102,7 +103,8 @@ def check_urgent_bins():
             target_bin,
             cluster_bins,
             truck['capacity'],
-            current_load
+            current_load,
+            simulation_time
         )
         
         # Include target bin

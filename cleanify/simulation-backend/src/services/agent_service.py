@@ -24,12 +24,22 @@ class WasteCollectionAgent:
         # Cache for clusters
         self.cached_clusters = None
         self.cached_bin_count = 0
+
+        # Simple in-memory queue of bin IDs prioritized for collection
+        # This queue is rebuilt on each routing cycle based on urgency and recency
+        self.collection_queue: List[str] = []
             
     def get_ai_decision(self, decision_type: str, data: Dict) -> Any:
         """Main AI decision entry point with VROOM optimization"""
         if decision_type == "truck_routing":
             # Enhanced with VROOM + Knapsack + Clustering workflow
-            routing_result = self.decision_service.get_routing_decision(data)
+            current_time = data.get('simulation_time', 0)
+            # Rebuild queue based on current state
+            self._rebuild_collection_queue(current_time)
+
+            routing_result = self.decision_service.get_routing_decision(
+                {**data, "preferred_bin_ids": set(self.collection_queue)}, current_time
+            )
             
             return routing_result
         else:
@@ -55,10 +65,11 @@ class WasteCollectionAgent:
         return self.optimization_service.calculate_urgency_score(bin_data, cluster_bins)
     
     def collect_bins_from_cluster(self, target_bin: Dict, cluster_bins: List[Dict], 
-                                 truck_capacity: float, current_load: float) -> List[Dict]:
+                                 truck_capacity: float, current_load: float,
+                                 simulation_time: float = None) -> List[Dict]:
         """Get optimal bin collection from cluster (still used for individual collections)"""
         return self.decision_service.get_cluster_collection_decision(
-            target_bin, cluster_bins, truck_capacity, current_load
+            target_bin, cluster_bins, truck_capacity, current_load, simulation_time
         )
     
     def get_or_create_clusters(self, bins_data: List[Dict]) -> Dict:
@@ -84,6 +95,52 @@ class WasteCollectionAgent:
             [bin_data], simulation_time_seconds, depot_data
         )
         return updated_bins[0].get('dynamic_threshold', bin_data.get('threshold', 80))
+
+    # ------------------ Queue Management ------------------
+    def _rebuild_collection_queue(self, current_time: float) -> None:
+        """Build a prioritized queue of bin IDs that should be collected next.
+
+        Rules:
+        - Exclude bins collected in the last 30 minutes
+        - Exclude bins with < 15% fill (fuel saving)
+        - Prioritize by: overflow/critical -> above threshold -> urgency score
+        """
+        try:
+            bins = list(self.bins_data) if self.bins_data else []
+            if not bins:
+                self.collection_queue = []
+                return
+
+            def recently_collected(b: Dict) -> bool:
+                last = b.get('lastCollection') or b.get('last_collection') or 0
+                if not current_time or not last:
+                    return False
+                return ((current_time - last) / 60) < 30
+
+            # Filter candidates
+            candidates = [
+                b for b in bins
+                if not recently_collected(b)
+                and b.get('fillLevel', 0) >= 15
+            ]
+
+            # Compute priority tuple
+            def priority_tuple(b: Dict):
+                fill = b.get('fillLevel', 0)
+                threshold = b.get('dynamic_threshold', b.get('threshold', 80))
+                overflow_flag = 1 if fill >= 100 else 0
+                critical_flag = 1 if fill >= 95 else 0
+                above_threshold = 1 if fill >= threshold else 0
+                urgency = self.optimization_service.calculate_urgency_score(b).get('total', 0)
+                # Higher tuple sorts first
+                return (overflow_flag, critical_flag, above_threshold, round(urgency, 2), round(fill, 2))
+
+            candidates.sort(key=priority_tuple, reverse=True)
+            # Keep a modest queue length to avoid thrashing; adjust as needed
+            self.collection_queue = [b['id'] for b in candidates[:50]]
+        except Exception:
+            # On any error, clear queue to avoid blocking
+            self.collection_queue = []
     
     # Simplified delegation methods (VROOM handles assignments)
     def reset_assignments(self):

@@ -13,7 +13,9 @@ class OptimizationService:
         }
     
     def optimize_truck_routes_with_vroom(self, trucks_data: List[Dict], clusters: Dict, 
-                                       depot_data: Optional[Dict] = None) -> Dict:
+                                       depot_data: Optional[Dict] = None, 
+                                       current_time: float = None,
+                                       preferred_bin_ids: Optional[set] = None) -> Dict:
         """
         Main optimization: Knapsack for capacity + VROOM for routing
         
@@ -24,7 +26,9 @@ class OptimizationService:
         """
         try:
             # Step 1: Select bins using knapsack within each cluster
-            selected_bins = self._select_bins_from_clusters(trucks_data, clusters)
+            selected_bins = self._select_bins_from_clusters(
+                trucks_data, clusters, current_time, preferred_bin_ids
+            )
             
             if not selected_bins:
                 return {
@@ -42,9 +46,11 @@ class OptimizationService:
             
         except Exception as e:
             print(f"⚠️ Optimization error: {e}")
-            return self._fallback_optimization(trucks_data, clusters)
+            return self._fallback_optimization(trucks_data, clusters, current_time)
     
-    def _select_bins_from_clusters(self, trucks_data: List[Dict], clusters: Dict) -> List[Dict]:
+    def _select_bins_from_clusters(self, trucks_data: List[Dict], clusters: Dict, 
+                                  current_time: float = None,
+                                  preferred_bin_ids: Optional[set] = None) -> List[Dict]:
         """
         Use knapsack to select optimal bins from each cluster
         
@@ -56,24 +62,59 @@ class OptimizationService:
         if not idle_trucks:
             return []
         
-        # Calculate total available capacity
-        total_capacity = sum(t.get('capacity', 1000) for t in idle_trucks)
-        available_capacity = total_capacity * 0.8  # Leave 20% buffer
+        # Calculate total available capacity (use full remaining capacity across idle trucks)
+        total_capacity = 0
+        for t in idle_trucks:
+            cap = t.get('capacity', 1000)
+            load = t.get('currentLoad', 0)
+            total_capacity += max(0, cap - load)
+        # Allow near-full utilization; keep a tiny 5% safety margin to avoid slight overfill rounding
+        available_capacity = max(0, int(total_capacity * 0.95))
         
         # Process each cluster
         for cluster_id, cluster_bins in clusters.items():
             # Filter bins that need collection
             urgent_bins = [
                 bin_data for bin_data in cluster_bins
-                if self._needs_collection(bin_data)
+                if self._needs_collection(bin_data, current_time)
             ]
+
+            # Also opportunistically include nearby bins about to reach threshold soon
+            def time_to_threshold_hours(b: Dict) -> float:
+                try:
+                    fill_level = b.get('fillLevel', 0)
+                    capacity = b.get('capacity', 500)
+                    fill_rate = b.get('fillRate', 0)
+                    threshold = b.get('dynamic_threshold', b.get('threshold', 80))
+                    if fill_level >= threshold:
+                        return 0.0
+                    if fill_rate <= 0:
+                        return float('inf')
+                    liters_needed = max(0.0, ((threshold - fill_level) / 100.0) * capacity)
+                    return liters_needed / fill_rate
+                except Exception:
+                    return float('inf')
+
+            soon_hours = 1.0
+            threshold_slack = 5.0
+            for b in cluster_bins:
+                if b in urgent_bins:
+                    continue
+                th = b.get('dynamic_threshold', b.get('threshold', 80))
+                fl = b.get('fillLevel', 0)
+                if fl >= (th - threshold_slack) or time_to_threshold_hours(b) <= soon_hours:
+                    urgent_bins.append(b)
+
+            # If a preferred queue is provided, restrict to those IDs
+            if preferred_bin_ids:
+                urgent_bins = [b for b in urgent_bins if b.get('id') in preferred_bin_ids]
             
             if not urgent_bins:
                 continue
             
             # Select optimal bins from this cluster using knapsack
             cluster_selected = self._select_optimal_bins_from_cluster(
-                urgent_bins, available_capacity
+                urgent_bins, available_capacity, current_time
             )
             
             # Add to global selection
@@ -86,14 +127,16 @@ class OptimizationService:
             )
             available_capacity = max(0, available_capacity - used_capacity)
             
-            # Stop if we've used most capacity
-            if available_capacity < 500:  # Less than one average bin
+            # Continue evaluating clusters while any capacity remains
+            if available_capacity <= 0:
                 break
         
         return all_selected_bins
     
     def _select_optimal_bins_from_cluster(self, cluster_bins: List[Dict], 
-                                        available_capacity: float) -> List[Dict]:
+                                        available_capacity: float,
+                                        current_time: float = None,
+                                        bypass_needs_check: bool = False) -> List[Dict]:
         """Use knapsack to select optimal bins from a single cluster"""
         if not cluster_bins or available_capacity <= 0:
             return []
@@ -101,8 +144,27 @@ class OptimizationService:
         # Prepare knapsack items
         items = []
         for bin_data in cluster_bins:
+            # Apply safety filters
+            if bypass_needs_check:
+                # Even in relaxed mode, enforce recency and minimum fill safeguards
+                last_collection = bin_data.get('lastCollection') or bin_data.get('last_collection', 0)
+                if current_time and last_collection > 0:
+                    try:
+                        minutes_since = (current_time - last_collection) / 60
+                        if minutes_since < 30:
+                            continue  # too recent
+                    except Exception:
+                        pass
+                # Skip trivially low-fill to save fuel
+                if bin_data.get('fillLevel', 0) < 15:
+                    continue
+            else:
+                # Strict mode: only include bins that truly need collection
+                if not self._needs_collection(bin_data, current_time):
+                    continue
             waste_amount = (bin_data['fillLevel'] / 100) * bin_data['capacity']
             urgency = self.calculate_urgency_score(bin_data, cluster_bins)
+            print(urgency)
             
             # Only include bins that fit in available capacity
             if waste_amount <= available_capacity:
@@ -119,10 +181,26 @@ class OptimizationService:
         selected_bins = self.solve_knapsack(items, int(available_capacity))
         return selected_bins
     
-    def _needs_collection(self, bin_data: Dict) -> bool:
+    def _needs_collection(self, bin_data: Dict, current_time: float = None) -> bool:
         """Check if bin needs collection based on threshold and urgency"""
         fill_level = bin_data.get('fillLevel', 0)
         threshold = bin_data.get('dynamic_threshold', bin_data.get('threshold', 80))
+        
+        # CRITICAL: Prevent collection of recently collected bins
+        last_collection = bin_data.get('lastCollection') or bin_data.get('last_collection', 0)
+        if current_time and last_collection > 0:
+            time_since_collection_minutes = (current_time - last_collection) / 60
+            # Don't collect bins that were collected less than 30 minutes ago
+            if time_since_collection_minutes < 30:
+                return False
+        
+        # CRITICAL: Don't collect nearly empty bins (waste of fuel)
+        if fill_level < 5:  # Less than 5% - not worth collecting
+            return False
+            
+        # Minimum collection threshold - don't collect unless at least 15% full
+        if fill_level < 15:
+            return False
         
         # Emergency collection
         if fill_level >= 95:
@@ -132,14 +210,16 @@ class OptimizationService:
         if fill_level >= threshold:
             return True
         
-        # High urgency collection
-        urgency = self.calculate_urgency_score(bin_data)
-        if urgency['total'] >= 75:  # High urgency threshold
-            return True
+        # High urgency collection - but only if bin has substantial waste
+        if fill_level >= 25:  # Only consider urgency for bins with >25% fill
+            urgency = self.calculate_urgency_score(bin_data)
+            if urgency['total'] >= 75:  # High urgency threshold
+                return True
         
         return False
     
-    def _fallback_optimization(self, trucks_data: List[Dict], clusters: Dict) -> Dict:
+    def _fallback_optimization(self, trucks_data: List[Dict], clusters: Dict, 
+                              current_time: float = None) -> Dict:
         """Fallback to simple assignment if VROOM is unavailable"""
         routes = []
         idle_trucks = [t for t in trucks_data if t.get('status') == 'idle']
@@ -151,7 +231,7 @@ class OptimizationService:
                 break
             
             # Find most urgent bin in cluster
-            urgent_bins = [b for b in cluster_bins if self._needs_collection(b)]
+            urgent_bins = [b for b in cluster_bins if self._needs_collection(b, current_time)]
             if not urgent_bins:
                 continue
             
