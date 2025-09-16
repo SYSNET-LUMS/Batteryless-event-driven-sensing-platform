@@ -71,7 +71,7 @@
       "id": "TRUCK_1",
       "lat": 33.68215089850431,
       "lng": 73.03220387757138,
-      "capacity": 1000,
+      "capacity": 1500,
       "speed": 50,
       "currentLoad": 0,
       "status": "idle"

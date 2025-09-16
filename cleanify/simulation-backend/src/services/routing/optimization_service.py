@@ -73,13 +73,14 @@ class OptimizationService:
         
         # Process each cluster
         for cluster_id, cluster_bins in clusters.items():
-            # Filter bins that need collection
+            # --- WAIT FOR NEARBY BINS LOGIC ---
+            # Step 1: Find bins that need collection now (overflow risk)
             urgent_bins = [
                 bin_data for bin_data in cluster_bins
                 if self._needs_collection(bin_data, current_time)
             ]
 
-            # Also opportunistically include nearby bins about to reach threshold soon
+            # Step 2: Find bins that will reach DT soon (within wait window)
             def time_to_threshold_hours(b: Dict) -> float:
                 try:
                     fill_level = b.get('fillLevel', 0)
@@ -97,36 +98,56 @@ class OptimizationService:
 
             soon_hours = 1.0
             threshold_slack = 5.0
+            wait_candidates = []
             for b in cluster_bins:
                 if b in urgent_bins:
                     continue
                 th = b.get('dynamic_threshold', b.get('threshold', 80))
                 fl = b.get('fillLevel', 0)
-                if fl >= (th - threshold_slack) or time_to_threshold_hours(b) <= soon_hours:
-                    urgent_bins.append(b)
+                tth = time_to_threshold_hours(b)
+                # If bin will reach threshold soon and can safely wait
+                if (fl >= (th - threshold_slack) or tth <= soon_hours) and tth > 0:
+                    wait_candidates.append((b, tth))
+
+            # Step 3: Decide if we can wait for more bins
+            # If no urgent bins, but some bins will reach DT soon, and waiting won't cause overflow
+            if not urgent_bins and wait_candidates:
+                # Find minimum time to threshold among candidates
+                min_wait = min(tth for b, tth in wait_candidates)
+                # Only wait if all bins can safely wait (no overflow)
+                if min_wait > 0:
+                    # Wait for min_wait hours, then collect all candidates together
+                    # For simulation, just select all candidates as if truck will wait
+                    urgent_bins = [b for b, tth in wait_candidates]
 
             # If a preferred queue is provided, restrict to those IDs
             if preferred_bin_ids:
                 urgent_bins = [b for b in urgent_bins if b.get('id') in preferred_bin_ids]
-            
+
             if not urgent_bins:
                 continue
-            
+
+            # --- TRAFFIC-AWARE LOGIC ---
+            # For each bin, estimate traffic density and travel time
+            for bin_data in urgent_bins:
+                # Dummy: use 1.0 for density, 0.1 for travel time unless you have a service
+                bin_data['traffic_density'] = bin_data.get('traffic_density', 1.0)
+                bin_data['travel_time_hours'] = bin_data.get('travel_time_hours', 0.1)
             # Select optimal bins from this cluster using knapsack
             cluster_selected = self._select_optimal_bins_from_cluster(
                 urgent_bins, available_capacity, current_time
             )
-            
+
             # Add to global selection
             all_selected_bins.extend(cluster_selected)
-            
+
             # Reduce available capacity
             used_capacity = sum(
                 (bin_data['fillLevel'] / 100) * bin_data['capacity']
                 for bin_data in cluster_selected
             )
             available_capacity = max(0, available_capacity - used_capacity)
-            
+
             # Continue evaluating clusters while any capacity remains
             if available_capacity <= 0:
                 break
@@ -143,40 +164,68 @@ class OptimizationService:
         
         # Prepare knapsack items
         items = []
-        for bin_data in cluster_bins:
-            # Apply safety filters
-            if bypass_needs_check:
-                # Even in relaxed mode, enforce recency and minimum fill safeguards
+        # Find the main DT-reached bin (the one that triggered dispatch)
+        dt_bins = [b for b in cluster_bins if self._needs_collection(b, current_time)]
+        # If there is a DT-reached bin, collect all bins in the cluster (not just nearby) if capacity allows
+        if dt_bins:
+            for bin_data in cluster_bins:
+                # --- TRAFFIC-AWARE LOGIC ---
+                traffic_density = bin_data.get('traffic_density', 1.0)
+                travel_time_hours = bin_data.get('travel_time_hours', 0.0)
+                # Only skip bins that were collected very recently or are nearly empty
                 last_collection = bin_data.get('lastCollection') or bin_data.get('last_collection', 0)
+                recently_collected = False
                 if current_time and last_collection > 0:
                     try:
                         minutes_since = (current_time - last_collection) / 60
                         if minutes_since < 30:
-                            continue  # too recent
+                            recently_collected = True
                     except Exception:
                         pass
-                # Skip trivially low-fill to save fuel
-                if bin_data.get('fillLevel', 0) < 15:
-                    continue
-            else:
-                # Strict mode: only include bins that truly need collection
-                if not self._needs_collection(bin_data, current_time):
-                    continue
-            waste_amount = (bin_data['fillLevel'] / 100) * bin_data['capacity']
-            urgency = self.calculate_urgency_score(bin_data, cluster_bins)
-            # print(urgency)
-            
-            # Only include bins that fit in available capacity
-            if waste_amount <= available_capacity:
-                items.append({
-                    'bin_data': bin_data,
-                    'weight': int(waste_amount),
-                    'value': int(urgency['total'])
-                })
-        
+                if not recently_collected and bin_data.get('fillLevel', 0) >= 5:
+                    waste_amount = (bin_data['fillLevel'] / 100) * bin_data['capacity']
+                    bin_data['traffic_density'] = traffic_density
+                    bin_data['travel_time_hours'] = travel_time_hours
+                    urgency = self.calculate_urgency_score(bin_data, cluster_bins)
+                    if waste_amount <= available_capacity:
+                        items.append({
+                            'bin_data': bin_data,
+                            'weight': int(waste_amount),
+                            'value': int(urgency['total'])
+                        })
+        else:
+            # Fallback: original logic
+            for bin_data in cluster_bins:
+                traffic_density = bin_data.get('traffic_density', 1.0)
+                travel_time_hours = bin_data.get('travel_time_hours', 0.0)
+                if bypass_needs_check:
+                    last_collection = bin_data.get('lastCollection') or bin_data.get('last_collection', 0)
+                    if current_time and last_collection > 0:
+                        try:
+                            minutes_since = (current_time - last_collection) / 60
+                            if minutes_since < 30:
+                                continue  # too recent
+                        except Exception:
+                            pass
+                    if bin_data.get('fillLevel', 0) < 15:
+                        continue
+                else:
+                    if not self._needs_collection(bin_data, current_time):
+                        continue
+                waste_amount = (bin_data['fillLevel'] / 100) * bin_data['capacity']
+                bin_data['traffic_density'] = traffic_density
+                bin_data['travel_time_hours'] = travel_time_hours
+                urgency = self.calculate_urgency_score(bin_data, cluster_bins)
+                if waste_amount <= available_capacity:
+                    items.append({
+                        'bin_data': bin_data,
+                        'weight': int(waste_amount),
+                        'value': int(urgency['total'])
+                    })
+
         if not items:
             return []
-        
+
         # Solve knapsack problem
         selected_bins = self.solve_knapsack(items, int(available_capacity))
         return selected_bins
@@ -299,7 +348,7 @@ class OptimizationService:
         try:
             # Use context bins for normalization if provided
             bins_for_normalization = context_bins or [bin_data]
-            
+
             # Get fill rate range for normalization
             all_fill_rates = [b.get('fillRate', 3.5) for b in bins_for_normalization]
             min_fill_rate = min(all_fill_rates) if all_fill_rates else 0
@@ -308,39 +357,55 @@ class OptimizationService:
             # Calculate individual scores
             fill_level = bin_data.get('fillLevel', 0)
             fill_rate = bin_data.get('fillRate', 3.5)
-            
+
             fill_score = fill_level
-            
+
             # Normalize fill rate score
             if max_fill_rate > min_fill_rate:
                 fill_rate_score = (fill_rate - min_fill_rate) / (max_fill_rate - min_fill_rate) * 100
             else:
                 fill_rate_score = 0
-            
+
             # Calculate time urgency
             time_to_overflow = self._calculate_time_to_overflow_safe(bin_data)
             time_urgency_score = self._calculate_time_urgency_score(time_to_overflow)
-            
-            # Calculate weighted total
+
+            # --- TRAFFIC-AWARE LOGIC ---
+            # Estimate travel time to bin (with traffic)
+            # For now, use a simple traffic multiplier from bin_data if available
+            traffic_density = bin_data.get('traffic_density', 1.0)
+            travel_time_hours = bin_data.get('travel_time_hours', 0.0)
+            # If not present, fallback to 0
+            traffic_delay_score = 0
+            if travel_time_hours > 0:
+                # If travel time is significant compared to time to overflow, increase urgency
+                if time_to_overflow > 0:
+                    traffic_delay_score = min(100, (travel_time_hours * traffic_density) / max(0.1, time_to_overflow) * 100)
+                else:
+                    traffic_delay_score = 100
+
+            # Add traffic delay score to urgency (weight can be tuned)
             urgency_score = (
                 self.urgency_weights['FILL'] * fill_score +
                 self.urgency_weights['TIME'] * time_urgency_score +
-                self.urgency_weights['FILL_RATE'] * fill_rate_score
+                self.urgency_weights['FILL_RATE'] * fill_rate_score +
+                0.15 * traffic_delay_score
             )
-            
+
             priority = self._get_priority(urgency_score)
-            
+
             return {
                 'total': round(urgency_score, 2),
                 'priority': priority,
                 'components': {
                     'fill': round(fill_score, 1),
                     'fill_rate': round(fill_rate_score, 1),
-                    'time': round(time_urgency_score, 1)
+                    'time': round(time_urgency_score, 1),
+                    'traffic_delay': round(traffic_delay_score, 1)
                 },
-                'reasoning': self._generate_reasoning(fill_score, fill_rate_score, priority)
+                'reasoning': self._generate_reasoning(fill_score, fill_rate_score, priority) + f" | Traffic delay: {round(traffic_delay_score,1)}"
             }
-            
+
         except Exception as e:
             print(f"⚠ Urgency calculation failed: {e}")
             return {'total': 50.0, 'priority': 'MEDIUM'}
@@ -350,20 +415,26 @@ class OptimizationService:
         fill_level = bin_data.get('fillLevel', 0)
         capacity = bin_data.get('capacity', 500)
         fill_rate = bin_data.get('fillRate', 3.5)
-        
+        # --- TRAFFIC-AWARE LOGIC ---
+        travel_time_hours = bin_data.get('travel_time_hours', 0.0)
+        traffic_density = bin_data.get('traffic_density', 1.0)
+
         if fill_level >= 100:
             return 0.0
-        
+
         if fill_rate <= 0:
             return float('inf')
-        
+
         current_fill_liters = (fill_level / 100) * capacity
         remaining_capacity = capacity - current_fill_liters
-        
+
         if remaining_capacity <= 0:
             return 0.0
-        
-        return max(0.0, remaining_capacity / fill_rate)
+
+        # Subtract travel time (with traffic) from time to overflow
+        time_to_overflow = max(0.0, remaining_capacity / fill_rate)
+        time_to_overflow -= travel_time_hours * traffic_density
+        return max(0.0, time_to_overflow)
     
     def _calculate_time_urgency_score(self, time_to_overflow: float) -> float:
         """Calculate urgency score based on time to overflow"""
