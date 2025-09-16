@@ -1,6 +1,7 @@
 from typing import Dict, List, Optional
 from services.traffic_service import TrafficManager
 from services.external.osrm_service import OSRMService
+from config.settings import Config
 
 class DispatchService:
     """Handles dispatch timing decisions with traffic awareness"""
@@ -8,6 +9,7 @@ class DispatchService:
     def __init__(self, osrm_service: OSRMService = None):
         self.traffic_manager = TrafficManager()
         self.osrm_service = osrm_service or OSRMService()
+        self.config = Config()
         
         # Dispatch thresholds
         self.critical_fill_threshold = 95
@@ -19,7 +21,7 @@ class DispatchService:
     def should_dispatch_now(self, bin_data: Dict, truck_data: Dict, 
                           simulation_time_seconds: float) -> Dict:
         """Main dispatch decision logic with safety overrides"""
-        start_hour = 7
+        start_hour = self.config.SIMULATION_START_HOUR
         current_time_min = (start_hour * 60) + (simulation_time_seconds // 60)
         
         time_to_overflow_hours = self._calculate_time_to_overflow(bin_data)

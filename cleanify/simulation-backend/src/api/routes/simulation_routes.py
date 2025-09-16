@@ -1,4 +1,5 @@
 from flask import Blueprint, jsonify, request, current_app
+from config.settings import Config
 
 bp = Blueprint('simulation', __name__, url_prefix='/api')
 
@@ -87,7 +88,8 @@ def simulation_step():
         # Get traffic info
         traffic_info = {}
         if agent and hasattr(agent, 'traffic_manager'):
-            start_hour = 7
+            config = Config()
+            start_hour = config.SIMULATION_START_HOUR
             current_time_min = (start_hour * 60) + (simulation_time // 60)
             current_hour = (current_time_min // 60) % 24
             

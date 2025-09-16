@@ -18,6 +18,9 @@ let isSystemAnalyzed = false;
 // Route visualization
 let routePolylines = new Map(); // Store all route polylines for clearing
 
+// Configuration from backend
+let simulationStartHour = 7; // Default value, will be fetched from backend
+
 // Backend API configuration
 const API_BASE = 'http://localhost:5001/api';
 
@@ -28,6 +31,8 @@ document.addEventListener('DOMContentLoaded', function() {
     initializeModal();
     initializeBackend();
     updateStats();
+    // Initialize time display immediately
+    updateSimulationTime();
 });
 
 const ITEM_CONFIGS = {
@@ -95,9 +100,53 @@ async function initializeBackend() {
         await fetch(`${API_BASE}/initialize`, { method: 'POST' });
         console.log('Backend initialized');
         
+        // Fetch simulation start hour from backend
+        await fetchSimulationStartHour();
+        
+        // Initialize simulation time display after config is loaded
+        updateSimulationTime();
+        
     } catch (error) {
         console.error('Backend connection failed:', error);
         showBackendError();
+        
+        // Still initialize time display with default value
+        updateSimulationTime();
+    }
+}
+
+async function fetchSimulationStartHour() {
+    try {
+        console.log('Fetching simulation start hour from backend...');
+        const response = await fetch(`${API_BASE}/config/simulation_start_hour`);
+        const data = await response.json();
+        
+        if (data.status === 'success') {
+            simulationStartHour = data.simulation_start_hour;
+            console.log(`✅ Simulation start hour fetched from backend: ${simulationStartHour}`);
+            console.log(`Time will now display starting from ${simulationStartHour}:00:00`);
+        } else {
+            console.warn('❌ Failed to fetch simulation start hour, using default:', simulationStartHour);
+        }
+    } catch (error) {
+        console.error('❌ Error fetching simulation start hour:', error);
+        console.warn('Using default simulation start hour:', simulationStartHour);
+    }
+}
+
+async function fetchTrafficInfoFromBackend(simulationTimeParam) {
+    try {
+        const response = await fetch(`${API_BASE}/config/traffic_info?simulation_time=${simulationTimeParam}`);
+        const data = await response.json();
+        
+        if (data.status === 'success' && data.traffic_info) {
+            // Use existing updateTrafficDisplay function that properly handles backend traffic data
+            updateTrafficDisplay(data.traffic_info);
+        } else {
+            console.warn('❌ Failed to fetch traffic info from backend');
+        }
+    } catch (error) {
+        console.error('❌ Error fetching traffic info:', error);
     }
 }
 
@@ -569,7 +618,7 @@ function resetSimulation() {
     });
 
     updateStats();
-    updateSimulationTime();
+    updateSimulationTime(); // This will also update traffic info
     console.log('🔄 Simulation reset');
 }
 
@@ -1127,14 +1176,68 @@ let displayedSimulationTime = 0;
 function updateSimulationTime() {
     displayedSimulationTime = lerp(displayedSimulationTime, simulationTime, 0.2);
     
-    const actualTimeInSeconds = displayedSimulationTime + (7 * 3600);
+    const actualTimeInSeconds = displayedSimulationTime + (simulationStartHour * 3600);
     
     const hours = Math.floor(actualTimeInSeconds / 3600);
     const minutes = Math.floor((actualTimeInSeconds % 3600) / 60);
     const seconds = Math.floor(actualTimeInSeconds % 60);
     
     const timeString = `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
-    document.getElementById('simulationTime').textContent = timeString;
+    const timeStringHM = `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}`;
+    
+    // Debug logging (remove in production)
+    if (Math.floor(simulationTime) % 10 === 0 && simulationTime > 0) {
+        console.log(`Time update: simulationTime=${simulationTime}, simulationStartHour=${simulationStartHour}, actualTime=${timeString}`);
+    }
+    
+    // Update main simulation time display (map overlay)
+    const timeElement = document.getElementById('simulationTime');
+    if (timeElement) {
+        timeElement.textContent = timeString;
+        // Debug log every few seconds to check UI updates
+        if (Math.floor(simulationTime) % 10 === 0 && simulationTime > 0) {
+            console.log(`✅ UI Updated: Element found, set to: ${timeString}, actual element text: ${timeElement.textContent}`);
+        }
+    } else {
+        console.error(`❌ Element with id 'simulationTime' not found!`);
+    }
+    
+    // Also update traffic time display (sidebar)
+    const trafficTimeElement = document.getElementById('trafficTime');
+    if (trafficTimeElement) {
+        trafficTimeElement.textContent = timeStringHM;
+    }
+    
+    // Fetch traffic info from backend instead of calculating locally
+    fetchTrafficInfoFromBackend(simulationTime);
+}
+
+// Debug function - call this from browser console to test
+function debugTimeDisplay() {
+    const simulationElement = document.getElementById('simulationTime');
+    const trafficElement = document.getElementById('trafficTime');
+    const trafficLevelElement = document.getElementById('trafficLevel');
+    const trafficDensityElement = document.getElementById('trafficDensity');
+    
+    console.log('=== TIME & TRAFFIC DISPLAY DEBUG ===');
+    console.log('Main simulationTime element:', simulationElement);
+    console.log('Current simulationTime textContent:', simulationElement?.textContent);
+    console.log('Traffic trafficTime element:', trafficElement);
+    console.log('Current trafficTime textContent:', trafficElement?.textContent);
+    console.log('Traffic level element:', trafficLevelElement?.textContent);
+    console.log('Traffic density element:', trafficDensityElement?.textContent);
+    console.log('simulationTime variable:', simulationTime);
+    console.log('simulationStartHour variable:', simulationStartHour);
+    console.log('displayedSimulationTime variable:', displayedSimulationTime);
+    
+    // Force update
+    updateSimulationTime();
+    console.log('After forced update:');
+    console.log('- simulationTime element:', simulationElement?.textContent);
+    console.log('- trafficTime element:', trafficElement?.textContent);
+    console.log('- trafficLevel element:', trafficLevelElement?.textContent);
+    console.log('- trafficDensity element:', trafficDensityElement?.textContent);
+    console.log('=======================================');
 }
 
 // MODAL FUNCTIONS

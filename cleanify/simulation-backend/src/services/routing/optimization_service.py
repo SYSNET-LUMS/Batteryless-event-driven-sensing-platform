@@ -164,7 +164,7 @@ class OptimizationService:
                     continue
             waste_amount = (bin_data['fillLevel'] / 100) * bin_data['capacity']
             urgency = self.calculate_urgency_score(bin_data, cluster_bins)
-            print(urgency)
+            # print(urgency)
             
             # Only include bins that fit in available capacity
             if waste_amount <= available_capacity:

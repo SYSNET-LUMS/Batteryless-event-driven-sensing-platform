@@ -13,7 +13,8 @@ from .routes import (
     item_routes,
     simulation_routes,
     ai_routes,
-    file_routes
+    file_routes,
+    config_routes
 )
 
 def create_app(config: Config = None) -> Flask:
@@ -41,5 +42,6 @@ def create_app(config: Config = None) -> Flask:
     app.register_blueprint(simulation_routes.bp)
     app.register_blueprint(ai_routes.bp)
     app.register_blueprint(file_routes.bp)
+    app.register_blueprint(config_routes.bp)
     
     return app

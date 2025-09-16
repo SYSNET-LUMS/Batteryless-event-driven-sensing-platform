@@ -1,6 +1,7 @@
 from typing import Dict, List, Optional
 from services.external.osrm_service import OSRMService
 from services.traffic_service import TrafficManager
+from config.settings import Config
 
 class SimulationService:
     """Manages simulation state and coordinates updates"""
@@ -8,7 +9,8 @@ class SimulationService:
     def __init__(self, osrm_service: OSRMService = None):
         self.osrm_service = osrm_service or OSRMService()
         self.traffic_manager = TrafficManager()
-        self.simulation_start_hour = 7
+        self.config = Config()
+        self.simulation_start_hour = self.config.SIMULATION_START_HOUR
 
         self.travel_time_cache = {}
     
