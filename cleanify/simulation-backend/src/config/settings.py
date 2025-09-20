@@ -3,6 +3,10 @@ from dataclasses import dataclass
 
 @dataclass
 class Config:
+    # Urgency score weights (tunable)
+    URGENCY_WEIGHT_FILL: float = float(os.getenv('URGENCY_WEIGHT_FILL', 0.5))
+    URGENCY_WEIGHT_RATE: float = float(os.getenv('URGENCY_WEIGHT_RATE', 0.3))
+    URGENCY_WEIGHT_TIME: float = float(os.getenv('URGENCY_WEIGHT_TIME', 0.2))
     """Application configuration with VROOM support"""
     # Server settings
     HOST: str = os.getenv('HOST', '0.0.0.0')

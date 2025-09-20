@@ -1,3 +1,4 @@
+
 from typing import Dict, List, Optional
 from services.traffic_service import TrafficManager
 from services.external.osrm_service import OSRMService
@@ -126,3 +127,23 @@ class DispatchService:
                 })
         
         return ready_dispatches
+    def dispatch_decision_flow(self, bins_data: List[Dict], trucks_data: List[Dict], simulation_time_seconds: float) -> List[Dict]:
+            """
+            Example orchestration method: For each bin and available truck, decide whether to dispatch now or wait,
+            using traffic-aware logic.
+            Returns a list of dispatch decisions for bins that should be collected now.
+            """
+            dispatches = []
+            for bin_data in bins_data:
+                for truck_data in trucks_data:
+                    decision = self.should_dispatch_now(bin_data, truck_data, simulation_time_seconds)
+                    if decision['dispatch'] == 'now':
+                        dispatches.append({
+                            'truck_id': truck_data.get('id'),
+                            'bin_id': bin_data.get('id'),
+                            'route': [bin_data.get('id')],
+                            'delay_min': decision.get('delay_min', 0),
+                            'reason': decision.get('reason', '')
+                        })
+                    # If decision['dispatch'] == 'wait', you can schedule for later or log
+            return dispatches

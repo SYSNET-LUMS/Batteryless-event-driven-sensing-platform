@@ -30,17 +30,26 @@ class WasteCollectionAgent:
         self.collection_queue: List[str] = []
             
     def get_ai_decision(self, decision_type: str, data: Dict) -> Any:
-        """Main AI decision entry point with VROOM optimization"""
+        """Main AI decision entry point with VROOM optimization and traffic-aware dispatch"""
         if decision_type == "truck_routing":
-            # Enhanced with VROOM + Knapsack + Clustering workflow
             current_time = data.get('simulation_time', 0)
+            bins_data = data.get('bins_data', [])
+            trucks_data = data.get('trucks_data', [])
             # Rebuild queue based on current state
             self._rebuild_collection_queue(current_time)
 
+            # Traffic-aware dispatch logic
+            from services.traffic.dispatch_service import DispatchService
+            dispatch_service = DispatchService(self.osrm_service)
+            dispatches = dispatch_service.dispatch_decision_flow(bins_data, trucks_data, current_time)
+            # Only dispatch bins recommended for 'now'
+            dispatch_bin_ids = set(d['bin_id'] for d in dispatches)
+            # Filter collection queue to only bins recommended for dispatch
+            filtered_bin_ids = set(self.collection_queue) & dispatch_bin_ids
+
             routing_result = self.decision_service.get_routing_decision(
-                {**data, "preferred_bin_ids": set(self.collection_queue)}, current_time
+                {**data, "preferred_bin_ids": filtered_bin_ids}, current_time
             )
-            
             return routing_result
         else:
             return {"error": f"Decision type not supported: {decision_type}"}

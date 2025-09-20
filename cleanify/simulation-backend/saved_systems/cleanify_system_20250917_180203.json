@@ -1,0 +1,116 @@
+{
+  "timestamp": "2025-09-17T13:02:03.509Z",
+  "version": "2.0-simplified",
+  "bins": [
+    {
+      "id": "BIN_1",
+      "lat": 33.67835415142453,
+      "lng": 73.00934314727785,
+      "fillLevel": 27,
+      "capacity": 500,
+      "fillRate": 40,
+      "threshold": 80
+    },
+    {
+      "id": "BIN_2",
+      "lat": 33.67853271419265,
+      "lng": 73.01140308380128,
+      "fillLevel": 21,
+      "capacity": 500,
+      "fillRate": 40,
+      "threshold": 80
+    },
+    {
+      "id": "BIN_3",
+      "lat": 33.67935409814976,
+      "lng": 73.00865650177003,
+      "fillLevel": 31,
+      "capacity": 500,
+      "fillRate": 26,
+      "threshold": 80
+    },
+    {
+      "id": "BIN_4",
+      "lat": 33.64399177663288,
+      "lng": 73.04577827453615,
+      "fillLevel": 25,
+      "capacity": 500,
+      "fillRate": 45,
+      "threshold": 80
+    },
+    {
+      "id": "BIN_5",
+      "lat": 33.64317005500671,
+      "lng": 73.0433750152588,
+      "fillLevel": 15,
+      "capacity": 500,
+      "fillRate": 30,
+      "threshold": 80
+    },
+    {
+      "id": "BIN_6",
+      "lat": 33.644384771159935,
+      "lng": 73.04425477981569,
+      "fillLevel": 19,
+      "capacity": 500,
+      "fillRate": 25,
+      "threshold": 80
+    },
+    {
+      "id": "BIN_7",
+      "lat": 33.6428485096268,
+      "lng": 73.0448341369629,
+      "fillLevel": 20,
+      "capacity": 500,
+      "fillRate": 40,
+      "threshold": 80
+    },
+    {
+      "id": "BIN_8",
+      "lat": 33.68006833869061,
+      "lng": 73.01020145416261,
+      "fillLevel": 16,
+      "capacity": 500,
+      "fillRate": 35,
+      "threshold": 80
+    }
+  ],
+  "trucks": [
+    {
+      "id": "TRUCK_1",
+      "lat": 33.65906718995458,
+      "lng": 73.02217483520509,
+      "capacity": 2000,
+      "speed": 1000,
+      "currentLoad": 0,
+      "status": "idle"
+    },
+    {
+      "id": "TRUCK_2",
+      "lat": 33.65899574872584,
+      "lng": 73.02208900451662,
+      "capacity": 2000,
+      "speed": 100,
+      "currentLoad": 0,
+      "status": "idle"
+    }
+  ],
+  "depots": [
+    {
+      "id": "DEPOT_1",
+      "lat": 33.65921007223414,
+      "lng": 73.02200317382814,
+      "name": "Default Depot"
+    }
+  ],
+  "simulation": {
+    "time": 0,
+    "collectionsToday": 0,
+    "isRunning": false
+  },
+  "metadata": {
+    "saved_at": "2025-09-17T18:02:03.517880",
+    "filename": "cleanify_system_20250917_180203.json",
+    "version": "2.0-simplified"
+  }
+}

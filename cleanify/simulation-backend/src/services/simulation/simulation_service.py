@@ -4,6 +4,30 @@ from services.traffic_service import TrafficManager
 from config.settings import Config
 
 class SimulationService:
+    def calculate_urgency_score(self, bin_data: Dict) -> Dict:
+        import math
+        fill = bin_data.get('fillLevel', 0)
+        rate = bin_data.get('fillRate', 0)
+        cap = bin_data.get('capacity', 500)
+        threshold = bin_data.get('dynamic_threshold', bin_data.get('threshold', 80))
+        time_to_threshold = self._time_to_threshold_hours(bin_data, threshold)
+
+        # Configurable weights
+        w_fill = getattr(self.config, 'URGENCY_WEIGHT_FILL', 0.5)
+        w_rate = getattr(self.config, 'URGENCY_WEIGHT_RATE', 0.3)
+        w_time = getattr(self.config, 'URGENCY_WEIGHT_TIME', 0.2)
+
+        # Sigmoid for time-to-threshold (bins close to threshold get higher urgency)
+        time_urgency = 1 / (1 + math.exp(time_to_threshold - 4))  # 4 hours as inflection
+
+        urgency = (
+            w_fill * (fill / 100) +
+            w_rate * (rate / 50) +
+            w_time * time_urgency
+        )
+        urgency = max(0.0, min(1.0, urgency))  # Clamp between 0 and 1
+
+        return {'score': urgency}
     """Manages simulation state and coordinates updates"""
     
     def __init__(self, osrm_service: OSRMService = None):
@@ -21,18 +45,12 @@ class SimulationService:
         updated_bins = []
         from utils.distance import calculate_distance_km
 
-        # Precompute urgency for all bins
+        # Precompute urgency for all bins using the dedicated function
         bin_urgencies = {}
         for b in bins_data:
             try:
-                # Use fill level, fill rate, and time to overflow for urgency
-                fill = b.get('fillLevel', 0)
-                rate = b.get('fillRate', 0)
-                cap = b.get('capacity', 500)
-                threshold = b.get('dynamic_threshold', b.get('threshold', 80))
-                time_to_overflow = self._time_to_threshold_hours(b, 100)
-                # Simple urgency: weighted sum
-                urgency = 0.5 * (fill / 100) + 0.3 * (rate / 50) + 0.2 * (max(0, 8 - time_to_overflow) / 8)
+                urgency_data = self.calculate_urgency_score(b)
+                urgency = urgency_data.get('score', 0.5)
                 bin_urgencies[b['id']] = urgency
             except Exception:
                 bin_urgencies[b['id']] = 0.5
@@ -250,3 +268,7 @@ class SimulationService:
             return 'Moderate'
         else:
             return 'Light'
+
+    def should_dispatch_now(self,simulation_time_seconds: float) -> bool:
+        traffic_info = self.get_traffic_info(simulation_time_seconds)
+        return traffic_info['traffic_level'] == 'Light'
