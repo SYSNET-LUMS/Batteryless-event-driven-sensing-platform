@@ -3,6 +3,7 @@ from .traffic_service import TrafficManager
 from .clustering_service import ClusteringService
 from .routing_service import RoutingService
 from .file_service import FileService
+from .schedule_service import ScheduleService
 
 # External services
 from .external.osrm_service import OSRMService

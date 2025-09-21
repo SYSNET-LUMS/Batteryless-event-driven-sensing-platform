@@ -29,6 +29,7 @@ document.addEventListener('DOMContentLoaded', function() {
     initializeMap();
     initializeControls();
     initializeModal();
+    initializeScheduling();
     initializeBackend();
     updateStats();
     // Initialize time display immediately
@@ -622,11 +623,117 @@ function resetSimulation() {
     console.log('🔄 Simulation reset');
 }
 
+async function checkScheduledDispatches() {
+    try {
+        // Get active schedules from backend
+        const response = await fetch(`${API_BASE}/schedules/active?simulation_time=${simulationTime}`);
+        const data = await response.json();
+        
+        if (data.status === 'success' && data.active_schedules.length > 0) {
+            console.log(`📅 Found ${data.active_schedules.length} scheduled dispatches ready for execution`);
+            
+            for (const schedule of data.active_schedules) {
+                await executeScheduledDispatch(schedule);
+            }
+        }
+        
+    } catch (error) {
+        console.error('Error checking scheduled dispatches:', error);
+    }
+}
+
+async function executeScheduledDispatch(schedule) {
+    try {
+        // Find the truck
+        const truck = items.trucks.find(t => t.id === schedule.truck_id);
+        if (!truck) {
+            console.warn(`Truck ${schedule.truck_id} not found for scheduled dispatch`);
+            return;
+        }
+        
+        // Check if truck is available
+        if (truck.status !== 'idle') {
+            console.warn(`Truck ${schedule.truck_id} is not idle (${truck.status}), skipping scheduled dispatch`);
+            // Could implement queuing or rescheduling here
+            return;
+        }
+        
+        // Mark schedule as executing
+        const executeResponse = await fetch(`${API_BASE}/schedules/${schedule.id}/execute`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ simulation_time: simulationTime })
+        });
+        
+        const executeData = await executeResponse.json();
+        if (executeData.status !== 'success') {
+            console.error(`Failed to mark schedule ${schedule.id} as executing`);
+            return;
+        }
+        
+        // Execute the dispatch
+        truck.dispatchReason = `Scheduled: ${schedule.reason}`;
+        truck.dispatchTime = simulationTime;
+        
+        // Assign truck to the scheduled route
+        await assignTruckToMultipleBins(truck, schedule.target_bin_ids);
+        
+        console.log(`📅 ✅ Executed scheduled dispatch: ${schedule.truck_id} → ${schedule.target_bin_ids.join(', ')} (${schedule.area_name})`);
+        
+        // Update schedule status to completed after successful dispatch
+        setTimeout(async () => {
+            try {
+                await fetch(`${API_BASE}/schedules/${schedule.id}`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ status: 'completed' })
+                });
+                
+                // Reload schedules to update UI
+                await loadSchedules();
+            } catch (error) {
+                console.error('Error updating schedule status:', error);
+            }
+        }, 1000); // Small delay to ensure dispatch is processed
+        
+    } catch (error) {
+        console.error(`Error executing scheduled dispatch ${schedule.id}:`, error);
+    }
+}
+
+async function handleScheduledDispatchFromBackend(dispatch) {
+    try {
+        const truck = items.trucks.find(t => t.id === dispatch.truck_id);
+        if (!truck) {
+            console.warn(`Truck ${dispatch.truck_id} not found for backend scheduled dispatch`);
+            return;
+        }
+        
+        // Set dispatch reason and execute
+        truck.dispatchReason = dispatch.reason;
+        truck.dispatchTime = simulationTime;
+        
+        // Assign truck to the scheduled route
+        await assignTruckToMultipleBins(truck, dispatch.route);
+        
+        console.log(`📅 ✅ Backend scheduled dispatch executed: ${dispatch.truck_id} → ${dispatch.route.join(', ')}`);
+        
+        // Reload schedules to update UI
+        await loadSchedules();
+        
+    } catch (error) {
+        console.error('Error handling backend scheduled dispatch:', error);
+    }
+}
+
 async function simulationStep() {
     simulationTime += simulationSpeed;
     await callBackendSimulationStep(simulationSpeed);
 
     items.trucks.forEach(updateTruck);
+    
+    // Check for scheduled dispatches
+    await checkScheduledDispatches();
 
     const idleTrucks = items.trucks.filter(t => t.status === 'idle' && !t.hasAssignment);
     if (idleTrucks.length > 0) {
@@ -1018,6 +1125,14 @@ async function callBackendSimulationStep(timeDelta) {
             if (data.traffic_info) {
                 updateTrafficDisplay(data.traffic_info);
             }
+            
+            // Handle scheduled dispatches
+            if (data.schedule_dispatches && data.schedule_dispatches.length > 0) {
+                console.log(`📅 Processing ${data.schedule_dispatches.length} scheduled dispatches from backend`);
+                for (const dispatch of data.schedule_dispatches) {
+                    await handleScheduledDispatchFromBackend(dispatch);
+                }
+            }
         }
     } catch (error) {
         console.error('Backend simulation step failed:', error);
@@ -1057,6 +1172,7 @@ function updateStats() {
     document.getElementById('totalDepots').textContent = items.depots.length;
     document.getElementById('collectionsToday').textContent = collectionsToday;
     updateItemsList();
+    updateSchedulesDisplay();
 }
 
 function updateItemsList() {
@@ -1595,4 +1711,339 @@ function updateWaitingTrucks() {
     });
     
     waitingContainer.innerHTML = html;
+}
+
+// SCHEDULING FUNCTIONS
+
+let schedules = [];
+
+function initializeScheduling() {
+    // Schedule dispatch button
+    document.getElementById('scheduleDispatchBtn').addEventListener('click', openScheduleModal);
+    
+    // View schedules button
+    document.getElementById('viewSchedulesBtn').addEventListener('click', openSchedulesViewModal);
+    
+    // Schedule modal controls
+    document.getElementById('scheduleModalClose').addEventListener('click', closeScheduleModal);
+    document.getElementById('cancelScheduleBtn').addEventListener('click', closeScheduleModal);
+    document.getElementById('createScheduleBtn').addEventListener('click', createSchedule);
+    
+    // Recurrence dropdown change handler
+    document.getElementById('scheduleRecurrence').addEventListener('change', function() {
+        const maxOccurrencesGroup = document.getElementById('maxOccurrencesGroup');
+        if (this.value === 'daily') {
+            maxOccurrencesGroup.style.display = 'block';
+        } else {
+            maxOccurrencesGroup.style.display = 'none';
+        }
+    });
+    
+    // Schedules view modal controls
+    document.getElementById('schedulesViewModalClose').addEventListener('click', closeSchedulesViewModal);
+    document.getElementById('closeSchedulesViewBtn').addEventListener('click', closeSchedulesViewModal);
+    
+    // Close modals when clicking outside
+    window.addEventListener('click', function(event) {
+        const scheduleModal = document.getElementById('scheduleModal');
+        const schedulesViewModal = document.getElementById('schedulesViewModal');
+        
+        if (event.target === scheduleModal) {
+            closeScheduleModal();
+        }
+        if (event.target === schedulesViewModal) {
+            closeSchedulesViewModal();
+        }
+    });
+    
+    // Load existing schedules
+    loadSchedules();
+}
+
+async function loadSchedules() {
+    try {
+        const response = await fetch(`${API_BASE}/schedules`);
+        const data = await response.json();
+        
+        if (data.status === 'success') {
+            schedules = data.schedules;
+            updateSchedulesDisplay();
+        } else {
+            console.error('Failed to load schedules:', data.message);
+        }
+    } catch (error) {
+        console.error('Error loading schedules:', error);
+    }
+}
+
+function openScheduleModal() {
+    const modal = document.getElementById('scheduleModal');
+    
+    // Populate truck dropdown
+    const truckSelect = document.getElementById('scheduleTruck');
+    truckSelect.innerHTML = '<option value="">Choose a truck...</option>';
+    items.trucks.forEach(truck => {
+        const option = document.createElement('option');
+        option.value = truck.id;
+        option.textContent = `${truck.id} (${truck.status})`;
+        truckSelect.appendChild(option);
+    });
+    
+    // Populate depot dropdown
+    const depotSelect = document.getElementById('scheduleDepot');
+    depotSelect.innerHTML = '<option value="">Choose a depot...</option>';
+    items.depots.forEach(depot => {
+        const option = document.createElement('option');
+        option.value = depot.id;
+        option.textContent = depot.name || depot.id;
+        depotSelect.appendChild(option);
+    });
+    
+    // Populate bins checkboxes
+    const binsContainer = document.getElementById('scheduleBins');
+    binsContainer.innerHTML = '';
+    items.bins.forEach(bin => {
+        const checkboxItem = document.createElement('div');
+        checkboxItem.className = 'checkbox-item';
+        checkboxItem.innerHTML = `
+            <input type="checkbox" id="bin_${bin.id}" value="${bin.id}">
+            <label for="bin_${bin.id}">${bin.id} (${bin.fillLevel}%)</label>
+        `;
+        binsContainer.appendChild(checkboxItem);
+    });
+    
+    // Reset form
+    document.getElementById('scheduleForm').reset();
+    
+    modal.style.display = 'block';
+}
+
+function closeScheduleModal() {
+    document.getElementById('scheduleModal').style.display = 'none';
+}
+
+async function createSchedule() {
+    try {
+        const truckId = document.getElementById('scheduleTruck').value;
+        const depotId = document.getElementById('scheduleDepot').value;
+        const scheduledHour = parseInt(document.getElementById('scheduleHour').value);
+        const scheduledMinute = parseInt(document.getElementById('scheduleMinute').value);
+        const areaName = document.getElementById('scheduleAreaName').value.trim();
+        const reason = document.getElementById('scheduleReason').value.trim();
+        const recurrenceType = document.getElementById('scheduleRecurrence').value;
+        const maxOccurrences = document.getElementById('scheduleMaxOccurrences').value;
+        
+        // Get selected bins
+        const selectedBins = [];
+        const checkboxes = document.querySelectorAll('#scheduleBins input[type="checkbox"]:checked');
+        checkboxes.forEach(checkbox => {
+            selectedBins.push(checkbox.value);
+        });
+        
+        // Validation
+        if (!truckId) {
+            alert('Please select a truck');
+            return;
+        }
+        if (!depotId) {
+            alert('Please select a depot');
+            return;
+        }
+        if (selectedBins.length === 0) {
+            alert('Please select at least one bin');
+            return;
+        }
+        
+        // Create schedule data
+        const scheduleData = {
+            truck_id: truckId,
+            depot_id: depotId,
+            target_bin_ids: selectedBins,
+            scheduled_hour: scheduledHour,
+            scheduled_minute: scheduledMinute,
+            area_name: areaName || `Area with ${selectedBins.length} bins`,
+            reason: reason || 'Scheduled dispatch',
+            recurrence_type: recurrenceType,
+            recurrence_interval: 24 // Always 24 hours for daily
+        };
+        
+        // Add max occurrences if specified and recurrence is daily
+        if (recurrenceType === 'daily' && maxOccurrences && maxOccurrences.trim() !== '') {
+            scheduleData.max_occurrences = parseInt(maxOccurrences);
+        }
+        
+        // Send to backend
+        const response = await fetch(`${API_BASE}/schedules`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(scheduleData)
+        });
+        
+        const data = await response.json();
+        
+        if (data.status === 'success') {
+            console.log('✅ Schedule created successfully');
+            closeScheduleModal();
+            loadSchedules(); // Reload schedules
+            
+            if (recurrenceType === 'daily') {
+                alert(`Daily recurring schedule created successfully! Will execute ${maxOccurrences ? maxOccurrences + ' times' : 'indefinitely'}.`);
+            } else {
+                alert('One-time schedule created successfully!');
+            }
+        } else {
+            alert(`Failed to create schedule: ${data.message}`);
+        }
+        
+    } catch (error) {
+        console.error('Error creating schedule:', error);
+        alert('Error creating schedule. Please try again.');
+    }
+}
+
+async function openSchedulesViewModal() {
+    const modal = document.getElementById('schedulesViewModal');
+    await loadSchedules(); // Refresh schedules
+    
+    const content = document.getElementById('schedulesViewContent');
+    
+    if (schedules.length === 0) {
+        content.innerHTML = '<div class="no-schedules">No schedules found</div>';
+    } else {
+        let html = '';
+        schedules.forEach(schedule => {
+            const statusClass = schedule.status;
+            const timeDisplay = `${schedule.scheduled_hour.toString().padStart(2, '0')}:${schedule.scheduled_minute.toString().padStart(2, '0')}`;
+            const recurrenceDisplay = schedule.recurrence_type === 'daily' ? 'Daily' : 'One-time';
+            const executionInfo = schedule.recurrence_type === 'daily' 
+                ? `(${schedule.total_executions || 0}/${schedule.max_occurrences || '∞'} executions)`
+                : '';
+            
+            html += `
+                <div class="schedule-view-item">
+                    <div class="schedule-view-header">
+                        <div class="schedule-view-time">${timeDisplay}</div>
+                        <div class="schedule-status ${statusClass}">${schedule.status}</div>
+                    </div>
+                    <div class="schedule-view-details">
+                        <div><strong>Truck:</strong> ${schedule.truck_id}</div>
+                        <div><strong>Depot:</strong> ${schedule.depot_id}</div>
+                        <div><strong>Area:</strong> ${schedule.area_name}</div>
+                        <div><strong>Reason:</strong> ${schedule.reason}</div>
+                        <div><strong>Recurrence:</strong> ${recurrenceDisplay} ${executionInfo}</div>
+                        ${schedule.next_execution_time && schedule.recurrence_type === 'daily' && schedule.status === 'pending' 
+                            ? `<div><strong>Next Execution:</strong> ${formatNextExecutionTime(schedule.next_execution_time)}</div>`
+                            : ''
+                        }
+                    </div>
+                    <div class="schedule-view-bins">
+                        <strong>Target Bins:</strong> ${schedule.target_bin_ids.join(', ')}
+                    </div>
+                    ${schedule.status === 'pending' ? `
+                        <div class="schedule-actions">
+                            <button class="btn btn-danger" onclick="deleteSchedule('${schedule.id}')">Delete</button>
+                        </div>
+                    ` : ''}
+                </div>
+            `;
+        });
+        content.innerHTML = html;
+    }
+    
+    modal.style.display = 'block';
+}
+
+function closeSchedulesViewModal() {
+    document.getElementById('schedulesViewModal').style.display = 'none';
+}
+
+async function deleteSchedule(scheduleId) {
+    if (!confirm('Are you sure you want to delete this schedule?')) {
+        return;
+    }
+    
+    try {
+        const response = await fetch(`${API_BASE}/schedules/${scheduleId}`, {
+            method: 'DELETE'
+        });
+        
+        const data = await response.json();
+        
+        if (data.status === 'success') {
+            console.log('✅ Schedule deleted successfully');
+            loadSchedules();
+            openSchedulesViewModal(); // Refresh the modal
+        } else {
+            alert(`Failed to delete schedule: ${data.message}`);
+        }
+        
+    } catch (error) {
+        console.error('Error deleting schedule:', error);
+        alert('Error deleting schedule. Please try again.');
+    }
+}
+
+function formatNextExecutionTime(nextExecutionTime) {
+    // Convert simulation time to hours and minutes
+    const startHour = 7; // Simulation starts at 7 AM
+    const totalMinutes = (startHour * 60) + (nextExecutionTime / 60);
+    const hours = Math.floor(totalMinutes / 60) % 24;
+    const minutes = Math.floor(totalMinutes % 60);
+    return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}`;
+}
+
+function updateSchedulesDisplay() {
+    // Update sidebar schedules summary
+    const activeSchedules = schedules.filter(s => s.status === 'pending').length;
+    document.getElementById('activeSchedules').textContent = activeSchedules;
+    
+    // Find next dispatch
+    const pendingSchedules = schedules.filter(s => s.status === 'pending');
+    if (pendingSchedules.length > 0) {
+        // Sort by next execution time
+        pendingSchedules.sort((a, b) => {
+            const timeA = a.next_execution_time || a.scheduled_time;
+            const timeB = b.next_execution_time || b.scheduled_time;
+            return timeA - timeB;
+        });
+        
+        const next = pendingSchedules[0];
+        const nextExecutionTime = next.next_execution_time || next.scheduled_time;
+        const timeDisplay = formatNextExecutionTime(nextExecutionTime);
+        document.getElementById('nextDispatch').textContent = timeDisplay;
+    } else {
+        document.getElementById('nextDispatch').textContent = 'None';
+    }
+    
+    // Update schedules list in sidebar
+    const schedulesList = document.getElementById('schedulesList');
+    if (activeSchedules === 0) {
+        schedulesList.innerHTML = '<div class="no-items">No active schedules</div>';
+    } else {
+        let html = '';
+        const activeSched = schedules.filter(s => s.status === 'pending').slice(0, 3); // Show first 3
+        
+        activeSched.forEach(schedule => {
+            const nextExecutionTime = schedule.next_execution_time || schedule.scheduled_time;
+            const timeDisplay = formatNextExecutionTime(nextExecutionTime);
+            const recurrenceIcon = schedule.recurrence_type === 'daily' ? '🔄' : '📅';
+            
+            html += `
+                <div class="schedule-item ${schedule.status}">
+                    <div class="schedule-time">${recurrenceIcon} ${timeDisplay}</div>
+                    <div class="schedule-details">${schedule.truck_id} → ${schedule.area_name}</div>
+                    ${schedule.recurrence_type === 'daily' 
+                        ? `<div class="schedule-details">Daily (${schedule.total_executions || 0}/${schedule.max_occurrences || '∞'})</div>`
+                        : ''
+                    }
+                </div>
+            `;
+        });
+        
+        if (activeSchedules > 3) {
+            html += `<div class="schedule-item"><div class="schedule-details">+${activeSchedules - 3} more schedules</div></div>`;
+        }
+        
+        schedulesList.innerHTML = html;
+    }
 }

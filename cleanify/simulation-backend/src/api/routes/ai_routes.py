@@ -32,8 +32,24 @@ def get_ai_decision(decision_type):
         # Filter out already assigned bins
         available_bins = [b for b in bins if not agent.is_bin_assigned(b['id'])]
         
+        # Filter out reserved trucks (for upcoming scheduled dispatches)
+        schedule_service = current_app.schedule_service
+        reserved_trucks = []
+        if schedule_service:
+            try:
+                schedules = repo.get_schedules()
+                simulation_time = data.get('simulation_time', 0)
+                reserved_trucks = schedule_service.get_reserved_trucks(schedules, simulation_time)
+                if reserved_trucks:
+                    print(f"🔒 {len(reserved_trucks)} trucks reserved for upcoming schedules: {reserved_trucks}")
+            except Exception as e:
+                print(f"⚠️ Error checking truck reservations: {e}")
+        
+        # Filter out reserved trucks from available trucks
+        available_trucks = [t for t in trucks if t['id'] not in reserved_trucks]
+        
         data['bins_data'] = available_bins
-        data['trucks_data'] = trucks
+        data['trucks_data'] = available_trucks
         data['depots_data'] = repo.get_depots()
         data['simulation_time'] = data.get('simulation_time', 0)
         

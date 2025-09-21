@@ -40,11 +40,48 @@ def simulation_step():
         
         agent = current_app.agent
         repo = current_app.system_repository
+        schedule_service = current_app.schedule_service
         
         if agent:
             ready_dispatches = agent.process_waiting_trucks(simulation_time)
             if ready_dispatches:
                 print(f"Dispatching {len(ready_dispatches)} trucks after waiting period")
+        
+        # Check for scheduled dispatches that are ready to execute
+        schedule_dispatches = []
+        if schedule_service:
+            try:
+                schedules = repo.get_schedules()
+                ready_schedules = schedule_service.find_ready_schedules(schedules, simulation_time)
+                
+                for schedule_data in ready_schedules:
+                    trucks = repo.get_trucks()
+                    success, message, dispatch_data = schedule_service.execute_schedule(
+                        schedule_data, trucks, simulation_time
+                    )
+                    
+                    if success and dispatch_data:
+                        schedule_dispatches.append(dispatch_data)
+                        # Mark schedule as executing
+                        schedule_data['status'] = 'executing'
+                        schedule_data['executed_at'] = simulation_time
+                        repo.update_schedule(schedule_data)
+                        print(f"📅 Executed schedule {schedule_data['id']}: {message}")
+                        
+                        # For recurring schedules, we'll complete them after a short delay
+                        # This simulates the truck starting its collection route
+                        if dispatch_data.get('is_recurring', False):
+                            # Complete immediately and regenerate for next occurrence
+                            success, complete_msg = schedule_service.complete_schedule_execution(
+                                schedule_data, simulation_time + 60, repo  # Complete 1 minute after dispatch
+                            )
+                            if success:
+                                print(f"📅 {complete_msg}")
+                    else:
+                        print(f"📅 Failed to execute schedule {schedule_data['id']}: {message}")
+                        
+            except Exception as e:
+                print(f"⚠️ Error processing schedules: {e}")
         
         # Update bin fill levels
         bins = repo.get_bins()
@@ -118,6 +155,7 @@ def simulation_step():
             "clusters": clusters_data,
             "reserved_bins": list(agent.reserved_bins) if agent else [],
             "waiting_assignments": len(agent.waiting_assignments) if agent else 0,
+            "schedule_dispatches": schedule_dispatches,
             "message": f"Simulation step completed ({time_delta}s)"
         })
         

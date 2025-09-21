@@ -1,5 +1,11 @@
 from typing import List, Optional, Dict, Any
+import uuid
+from dataclasses import asdict
 from .base import BaseRepository
+import sys
+import os
+sys.path.append(os.path.dirname(os.path.dirname(__file__)))
+from models.schedule import Schedule
 
 class SystemRepository:
     """Central repository managing all system data"""
@@ -8,10 +14,12 @@ class SystemRepository:
         self._bins: List[Dict] = []
         self._trucks: List[Dict] = []
         self._depots: List[Dict] = []
+        self._schedules: List[Dict] = []
         self._id_counters = {
             'bin': 0,
             'truck': 0,
-            'depot': 0
+            'depot': 0,
+            'schedule': 0
         }
     
     def get_bins(self) -> List[Dict]:
@@ -22,6 +30,9 @@ class SystemRepository:
     
     def get_depots(self) -> List[Dict]:
         return self._depots.copy()
+    
+    def get_schedules(self) -> List[Dict]:
+        return self._schedules.copy()
     
     def add_bin(self, bin_data: Dict) -> Dict:
         self._id_counters['bin'] += 1
@@ -92,10 +103,12 @@ class SystemRepository:
         self._bins.clear()
         self._trucks.clear()
         self._depots.clear()
+        self._schedules.clear()
         self._id_counters = {
             'bin': 0,
             'truck': 0,
-            'depot': 0
+            'depot': 0,
+            'schedule': 0
         }
     
     def get_state(self) -> Dict:
@@ -103,5 +116,51 @@ class SystemRepository:
         return {
             'bins': self._bins.copy(),
             'trucks': self._trucks.copy(),
-            'depots': self._depots.copy()
+            'depots': self._depots.copy(),
+            'schedules': self._schedules.copy()
         }
+    
+    # Schedule management methods
+    def add_schedule(self, schedule_data: Dict) -> Dict:
+        """Add a new schedule"""
+        self._id_counters['schedule'] += 1
+        schedule_data['id'] = f"SCHEDULE_{self._id_counters['schedule']}"
+        schedule_data['created_at'] = schedule_data.get('created_at', 0)
+        
+        # Create Schedule model instance to ensure proper validation and defaults
+        schedule = Schedule(**schedule_data)
+        schedule_dict = asdict(schedule)
+        
+        self._schedules.append(schedule_dict)
+        return schedule_dict
+    
+    def update_schedule(self, schedule_data: Dict) -> Optional[Dict]:
+        """Update an existing schedule"""
+        for i, schedule in enumerate(self._schedules):
+            if schedule['id'] == schedule_data['id']:
+                self._schedules[i] = schedule_data
+                return schedule_data
+        return None
+    
+    def delete_schedule(self, schedule_id: str) -> bool:
+        """Delete a schedule by ID"""
+        for i, schedule in enumerate(self._schedules):
+            if schedule['id'] == schedule_id:
+                self._schedules.pop(i)
+                return True
+        return False
+    
+    def get_schedule_by_id(self, schedule_id: str) -> Optional[Dict]:
+        """Get a schedule by ID"""
+        for schedule in self._schedules:
+            if schedule['id'] == schedule_id:
+                return schedule.copy()
+        return None
+    
+    def get_pending_schedules(self) -> List[Dict]:
+        """Get all pending schedules"""
+        return [s.copy() for s in self._schedules if s.get('status') == 'pending']
+    
+    def get_schedules_by_truck(self, truck_id: str) -> List[Dict]:
+        """Get all schedules for a specific truck"""
+        return [s.copy() for s in self._schedules if s.get('truck_id') == truck_id]

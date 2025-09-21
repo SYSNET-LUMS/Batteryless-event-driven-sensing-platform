@@ -84,6 +84,19 @@
                     </button>
                 </div>
             </div>
+            
+            <!-- Schedule Management -->
+            <div class="control-section">
+                <h3><i class="fas fa-calendar-alt"></i> Schedule Dispatches</h3>
+                <div class="control-group">
+                    <button id="scheduleDispatchBtn" class="btn btn-info">
+                        <i class="fas fa-calendar-plus"></i> Schedule Dispatch
+                    </button>
+                    <button id="viewSchedulesBtn" class="btn btn-secondary">
+                        <i class="fas fa-list"></i> View Schedules
+                    </button>
+                </div>
+            </div>
         </div>
         
         <!-- Main Map -->
@@ -167,6 +180,24 @@
                     <!-- Collection queue will be populated here -->
                 </div>
             </div>
+            
+            <!-- Scheduled Dispatches -->
+            <div class="stats-section">
+                <h3><i class="fas fa-calendar-alt"></i> Scheduled Dispatches</h3>
+                <div id="scheduleSummary" class="schedule-summary">
+                    <div class="stat-item">
+                        <span class="stat-label">Active Schedules:</span>
+                        <span id="activeSchedules" class="stat-value">0</span>
+                    </div>
+                    <div class="stat-item">
+                        <span class="stat-label">Next Dispatch:</span>
+                        <span id="nextDispatch" class="stat-value">None</span>
+                    </div>
+                </div>
+                <div id="schedulesList" class="items-list">
+                    <!-- Scheduled dispatches will be populated here -->
+                </div>
+            </div>
         </div>
     </div>
     
@@ -186,6 +217,120 @@
                 <button id="saveBtn" class="btn btn-success">Save</button>
                 <button id="cancelBtn" class="btn btn-secondary">Cancel</button>
                 <button id="deleteBtn" class="btn btn-danger">Delete</button>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Schedule Modal -->
+    <div id="scheduleModal" class="modal">
+        <div class="modal-content schedule-modal">
+            <div class="modal-header">
+                <h3 id="scheduleModalTitle">Schedule Truck Dispatch</h3>
+                <span class="close" id="scheduleModalClose">&times;</span>
+            </div>
+            <div class="modal-body">
+                <form id="scheduleForm">
+                    <div class="form-group">
+                        <label for="scheduleTruck">Select Truck:</label>
+                        <select id="scheduleTruck" class="form-control" required>
+                            <option value="">Choose a truck...</option>
+                        </select>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="scheduleDepot">Select Depot:</label>
+                        <select id="scheduleDepot" class="form-control" required>
+                            <option value="">Choose a depot...</option>
+                        </select>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="scheduleArea">Select Target Area (Bins):</label>
+                        <div id="scheduleBins" class="checkbox-group">
+                            <!-- Bins will be populated here -->
+                        </div>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="scheduleAreaName">Area Name (Optional):</label>
+                        <input type="text" id="scheduleAreaName" class="form-control" placeholder="e.g., Downtown District">
+                    </div>
+                    
+                    <div class="form-row">
+                        <div class="form-group half-width">
+                            <label for="scheduleHour">Hour:</label>
+                            <select id="scheduleHour" class="form-control" required>
+                                <option value="7">07:00</option>
+                                <option value="8">08:00</option>
+                                <option value="9">09:00</option>
+                                <option value="10">10:00</option>
+                                <option value="11">11:00</option>
+                                <option value="12">12:00</option>
+                                <option value="13">13:00</option>
+                                <option value="14">14:00</option>
+                                <option value="15">15:00</option>
+                                <option value="16">16:00</option>
+                                <option value="17">17:00</option>
+                                <option value="18">18:00</option>
+                                <option value="19">19:00</option>
+                                <option value="20">20:00</option>
+                                <option value="21">21:00</option>
+                                <option value="22">22:00</option>
+                                <option value="23">23:00</option>
+                            </select>
+                        </div>
+                        <div class="form-group half-width">
+                            <label for="scheduleMinute">Minute:</label>
+                            <select id="scheduleMinute" class="form-control" required>
+                                <option value="0">00</option>
+                                <option value="15">15</option>
+                                <option value="30">30</option>
+                                <option value="45">45</option>
+                            </select>
+                        </div>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="scheduleReason">Reason (Optional):</label>
+                        <input type="text" id="scheduleReason" class="form-control" placeholder="e.g., Emergency collection">
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="scheduleRecurrence">Recurrence:</label>
+                        <select id="scheduleRecurrence" class="form-control">
+                            <option value="once">One-time only</option>
+                            <option value="daily">Daily (repeat every 24 hours)</option>
+                        </select>
+                    </div>
+                    
+                    <div class="form-group" id="maxOccurrencesGroup" style="display: none;">
+                        <label for="scheduleMaxOccurrences">Maximum Occurrences (Optional):</label>
+                        <input type="number" id="scheduleMaxOccurrences" class="form-control" min="1" max="365" placeholder="Leave empty for unlimited">
+                        <small class="form-text">How many times should this schedule execute? (Leave empty for unlimited)</small>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button id="createScheduleBtn" class="btn btn-success">Create Schedule</button>
+                <button id="cancelScheduleBtn" class="btn btn-secondary">Cancel</button>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Schedules View Modal -->
+    <div id="schedulesViewModal" class="modal">
+        <div class="modal-content schedule-view-modal">
+            <div class="modal-header">
+                <h3>Scheduled Dispatches</h3>
+                <span class="close" id="schedulesViewModalClose">&times;</span>
+            </div>
+            <div class="modal-body">
+                <div id="schedulesViewContent">
+                    <!-- Schedules will be populated here -->
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button id="closeSchedulesViewBtn" class="btn btn-secondary">Close</button>
             </div>
         </div>
     </div>
