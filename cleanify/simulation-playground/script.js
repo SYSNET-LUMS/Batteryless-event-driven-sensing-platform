@@ -9,6 +9,9 @@ let simulationSpeed = 1;
 let isSimulationRunning = false;
 let selectedItem = null;
 let collectionsToday = 0;
+let displayedTrafficTime = "07:00";
+let displayedTrafficDensity = 1.0;
+let displayedTrafficLevel = "Light";
 
 // New global variables for GPT decisions
 let gptDecisions = null;
@@ -1294,7 +1297,7 @@ function updateSimulationTime() {
     
     const actualTimeInSeconds = displayedSimulationTime + (simulationStartHour * 3600);
     
-    const hours = Math.floor(actualTimeInSeconds / 3600);
+    const hours = Math.floor(actualTimeInSeconds / 3600) % 24;
     const minutes = Math.floor((actualTimeInSeconds % 3600) / 60);
     const seconds = Math.floor(actualTimeInSeconds % 60);
     
@@ -1663,27 +1666,28 @@ function showNotification(message, type = 'info') {
 
 function updateTrafficDisplay(trafficInfo) {
     if (!trafficInfo) return;
-    
-    // Update traffic time
-    document.getElementById('trafficTime').textContent = trafficInfo.time_of_day || '00:00';
-    
-    // Update traffic level with color
+
+    // Smoothly update density
+    const targetDensity = trafficInfo.current_density || 1.0;
+    displayedTrafficDensity = lerp(displayedTrafficDensity, targetDensity, 0.2);
+    document.getElementById('trafficDensity').textContent = displayedTrafficDensity.toFixed(1) + 'x';
+
+    // Sticky traffic level: only update if backend provides a valid value
+    const targetLevel = trafficInfo.traffic_level;
+    if (targetLevel && targetLevel !== "Unknown") {
+        displayedTrafficLevel = targetLevel;
+    }
     const levelElement = document.getElementById('trafficLevel');
-    levelElement.textContent = trafficInfo.traffic_level || 'Unknown';
+    levelElement.textContent = displayedTrafficLevel;
     levelElement.className = 'stat-value';
-    
-    if (trafficInfo.traffic_level === 'Heavy') {
+    if (displayedTrafficLevel === 'Heavy') {
         levelElement.classList.add('traffic-heavy');
-    } else if (trafficInfo.traffic_level === 'Moderate') {
+    } else if (displayedTrafficLevel === 'Moderate') {
         levelElement.classList.add('traffic-moderate');
     } else {
         levelElement.classList.add('traffic-light');
     }
-    
-    // Update density
-    const density = trafficInfo.current_density || 1.0;
-    document.getElementById('trafficDensity').textContent = density.toFixed(1) + 'x';
-    
+
     // Update waiting trucks
     updateWaitingTrucks();
 }
