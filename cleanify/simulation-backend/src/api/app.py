@@ -31,7 +31,8 @@ def create_app(config: Config = None) -> Flask:
          allow_headers=['Content-Type'])
     
     # Initialize services
-    app.system_repository = SystemRepository()
+    from repositories.system_repository import get_system_repository
+    app.system_repository = get_system_repository()
     app.agent = None
     app.clustering_service = ClusteringService(config)
     app.routing_service = RoutingService(config)
@@ -47,5 +48,7 @@ def create_app(config: Config = None) -> Flask:
     app.register_blueprint(file_routes.bp)
     app.register_blueprint(config_routes.bp)
     app.register_blueprint(schedule_routes.bp)
+    from .routes import batch_sync_routes
+    app.register_blueprint(batch_sync_routes.bp)
     
     return app

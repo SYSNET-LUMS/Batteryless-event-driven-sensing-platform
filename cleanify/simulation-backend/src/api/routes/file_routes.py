@@ -6,12 +6,12 @@ bp = Blueprint('files', __name__, url_prefix='/api')
 def save_system():
     """Save current system state"""
     try:
-        system_state = request.json
+        # Always get latest state from repository, not just request
+        repo = current_app.system_repository
+        system_state = repo.get_state()
         result = current_app.file_service.save_system(system_state)
-        
         print(f"System saved to: {result['filepath']}")
         return jsonify(result)
-        
     except Exception as e:
         print(f"⚠ Save failed: {e}")
         return jsonify({"status": "error", "message": str(e)}), 500
@@ -21,13 +21,14 @@ def load_system(filename):
     """Load system state from file"""
     try:
         system_state = current_app.file_service.load_system(filename)
-        
         if system_state is None:
             return jsonify({
                 'status': 'error',
                 'message': f'File not found: {filename}'
             }), 404
-        
+        # Restore system state in repository
+        repo = current_app.system_repository
+        repo.set_state(system_state)
         print(f"System loaded from: {filename}")
         return jsonify({
             'status': 'success',

@@ -1,11 +1,21 @@
 from typing import List, Optional, Dict, Any
 import uuid
 from dataclasses import asdict
+
 from .base import BaseRepository
 import sys
 import os
 sys.path.append(os.path.dirname(os.path.dirname(__file__)))
 from models.schedule import Schedule
+
+# --- Singleton instance ---
+_system_repository_instance = None
+
+def get_system_repository():
+    global _system_repository_instance
+    if _system_repository_instance is None:
+        _system_repository_instance = SystemRepository()
+    return _system_repository_instance
 
 class SystemRepository:
     """Central repository managing all system data"""
@@ -117,8 +127,29 @@ class SystemRepository:
             'bins': self._bins.copy(),
             'trucks': self._trucks.copy(),
             'depots': self._depots.copy(),
-            'schedules': self._schedules.copy()
+            'schedules': self._schedules.copy(),
+            'id_counters': self._id_counters.copy()
         }
+
+    def set_state(self, state: Dict):
+        """Restore system state from dict (including schedules)"""
+        self._bins = state.get('bins', []).copy()
+        self._trucks = state.get('trucks', []).copy()
+        self._depots = state.get('depots', []).copy()
+        loaded_schedules = state.get('schedules', [])
+        self._schedules = []
+        for sched in loaded_schedules:
+            try:
+                schedule_obj = Schedule(**sched)
+                self._schedules.append(asdict(schedule_obj))
+            except Exception as e:
+                print(f"⚠️ Error restoring schedule: {e} - {sched}")
+        self._id_counters = state.get('id_counters', {
+            'bin': 0,
+            'truck': 0,
+            'depot': 0,
+            'schedule': 0
+        }).copy()
     
     # Schedule management methods
     def add_schedule(self, schedule_data: Dict) -> Dict:

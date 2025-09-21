@@ -65,12 +65,6 @@ class TrafficManager:
                                bin_fill_level: Optional[float] = None) -> Dict:
         """Dispatch calculation with multiple safety overrides"""
         
-        print(f"DISPATCH ANALYSIS FOR {bin_id or 'UNKNOWN_BIN'}:")
-        print(f"Bin fill level: {bin_fill_level}%")
-        print(f"Time to overflow: {time_to_overflow_min:.1f} minutes")
-        print(f"Base travel time: {base_travel_min:.1f} minutes")
-        print(f"Current time: {(current_time_min//60)%24:02d}:{current_time_min%60:02d}")
-        
         # Safety checks
         if bin_fill_level is not None and bin_fill_level >= self.overflow_threshold:
             return {
@@ -99,11 +93,8 @@ class TrafficManager:
         else:
             current_density = self.get_density_at_time(current_time_min)
         
-        print(f"  Current traffic density: {current_density:.1f}x")
-        
         # Calculate travel time with current traffic
         adjusted_now = base_travel_min * current_density
-        print(f"  Travel time now: {adjusted_now:.1f} minutes")
         
         overflow_deadline = adjusted_now + self.safety_buffer
         if time_to_overflow_min <= overflow_deadline:
@@ -139,11 +130,6 @@ class TrafficManager:
         # Calculate potential savings
         travel_savings = adjusted_now - predicted_adjusted
         total_time_if_wait = predicted_adjusted + wait_for_normal_min
-        
-        print(f"Wait time: {wait_for_normal_min} minutes")
-        print(f"Travel time after wait: {predicted_adjusted:.1f} minutes")
-        print(f"Total time if wait: {total_time_if_wait:.1f} minutes")
-        print(f"Travel savings: {travel_savings:.1f} minutes")
         
         # Safety check: waiting would cause overflow
         safety_deadline = time_to_overflow_min - self.safety_buffer

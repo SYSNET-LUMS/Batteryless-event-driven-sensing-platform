@@ -1304,21 +1304,10 @@ function updateSimulationTime() {
     const timeString = `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
     const timeStringHM = `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}`;
     
-    // Debug logging (remove in production)
-    if (Math.floor(simulationTime) % 10 === 0 && simulationTime > 0) {
-        console.log(`Time update: simulationTime=${simulationTime}, simulationStartHour=${simulationStartHour}, actualTime=${timeString}`);
-    }
-    
     // Update main simulation time display (map overlay)
     const timeElement = document.getElementById('simulationTime');
     if (timeElement) {
         timeElement.textContent = timeString;
-        // Debug log every few seconds to check UI updates
-        if (Math.floor(simulationTime) % 10 === 0 && simulationTime > 0) {
-            console.log(`✅ UI Updated: Element found, set to: ${timeString}, actual element text: ${timeElement.textContent}`);
-        }
-    } else {
-        console.error(`❌ Element with id 'simulationTime' not found!`);
     }
     
     // Also update traffic time display (sidebar)
@@ -1556,22 +1545,20 @@ function loadSystemFromState(systemState) {
 
 async function syncLoadedDataWithBackend() {
     try {
-        await fetch(`${API_BASE}/initialize`, { method: 'POST' });
-        
-        for (const itemType of ['depots', 'bins', 'trucks']) {
-            for (const item of items[itemType]) {
-                const type = itemType.slice(0, -1);
-                
-                // FIX: Remove marker before sending
-                const { marker, ...cleanItem } = item;
-                
-                await fetch(`${API_BASE}/${type}`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(cleanItem)  // Send clean data only
-                });
-            }
-        }
+        // Clear only bins, trucks, and depots in backend before syncing
+        await fetch(`${API_BASE}/bins`, { method: 'DELETE' });
+        await fetch(`${API_BASE}/trucks`, { method: 'DELETE' });
+        await fetch(`${API_BASE}/depots`, { method: 'DELETE' });
+
+        // Batch sync all items in one request
+        const bins = items.bins.map(({ marker, ...bin }) => bin);
+        const trucks = items.trucks.map(({ marker, ...truck }) => truck);
+        const depots = items.depots.map(({ marker, ...depot }) => depot);
+        await fetch(`${API_BASE}/batch_sync`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ bins, trucks, depots })
+        });
         
         console.log('✅ Backend sync complete');
     } catch (error) {
@@ -1629,12 +1616,13 @@ async function loadSavedFile(filename) {
     try {
         const response = await fetch(`${API_BASE}/load_system/${filename}`);
         const data = await response.json();
-            if (data.status === 'success') {
-                loadSystemFromState(data.systemState);
-                showNotification(`Loaded: ${filename}`, 'success');
-            } else {
-                throw new Error(data.message);
-            }
+        if (data.status === 'success') {
+            loadSystemFromState(data.systemState);
+            await loadSchedules(); // Ensure schedules are refreshed after system load
+            showNotification(`Loaded: ${filename}`, 'success');
+        } else {
+            throw new Error(data.message);
+        }
     } catch (error) {
         showNotification(`Load failed: ${error.message}`, 'error');
     }
@@ -1771,6 +1759,7 @@ async function loadSchedules() {
         
         if (data.status === 'success') {
             schedules = data.schedules;
+            console.log('🟢 Schedules loaded from backend:', schedules);
             updateSchedulesDisplay();
         } else {
             console.error('Failed to load schedules:', data.message);

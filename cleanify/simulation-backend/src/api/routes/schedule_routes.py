@@ -11,7 +11,6 @@ def get_schedules():
     try:
         repo = current_app.system_repository
         schedules = repo.get_schedules()
-        
         return jsonify({
             "status": "success",
             "schedules": schedules
