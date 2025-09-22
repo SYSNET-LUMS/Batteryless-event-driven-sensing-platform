@@ -27,15 +27,26 @@ class DispatchService:
         
         time_to_overflow_hours = self._calculate_time_to_overflow(bin_data)
         time_to_overflow_min = time_to_overflow_hours * 60
-        
+
         # Get travel time
         base_travel_min = self._get_base_travel_time(bin_data, truck_data)
-        
+
         # Safety checks first
         safety_decision = self._check_safety_overrides(bin_data, time_to_overflow_min)
         if safety_decision:
             return safety_decision
-        
+
+        # Ensure truck can reach bin before overflow
+        # If travel time (with current traffic) + buffer > time to overflow, dispatch now
+        current_density = self.traffic_manager.get_bin_specific_density(bin_data['id'], current_time_min)
+        travel_time_with_traffic = base_travel_min * current_density
+        if (travel_time_with_traffic + self.safety_buffer) >= time_to_overflow_min:
+            return {
+                'dispatch': 'now',
+                'delay_min': 0,
+                'reason': f'Travel time ({travel_time_with_traffic:.1f}min) + buffer exceeds time to overflow ({time_to_overflow_min:.1f}min)'
+            }
+
         # Traffic-based decision
         return self.traffic_manager.calculate_dispatch_time(
             time_to_overflow_min,
@@ -48,28 +59,27 @@ class DispatchService:
     def _check_safety_overrides(self, bin_data: Dict, time_to_overflow_min: float) -> Optional[Dict]:
         """Check for safety conditions that override traffic optimization"""
         fill_level = bin_data.get('fillLevel', 0)
-        
+        fill_rate = bin_data.get('fillRate', 0)
+        if fill_rate <= 0:
+            print(f"⚠️ ALERT: Bin {bin_data.get('id','?')} has zero fill rate. Sensor or data issue.")
         if fill_level >= self.overflow_threshold:
             return {
                 'dispatch': 'now',
                 'delay_min': 0,
                 'reason': f'EMERGENCY: Bin overflowing at {fill_level}%'
             }
-        
         if fill_level >= self.critical_fill_threshold:
             return {
                 'dispatch': 'now',
                 'delay_min': 0,
                 'reason': f'CRITICAL: Bin at {fill_level}% - safety override'
             }
-        
         if time_to_overflow_min <= 0:
             return {
                 'dispatch': 'now',
                 'delay_min': 0,
                 'reason': 'EMERGENCY: Bin already overflowing (time calculation)'
             }
-        
         return None
     
     def _get_base_travel_time(self, bin_data: Dict, truck_data: Dict) -> float:

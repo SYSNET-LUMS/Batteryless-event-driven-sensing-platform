@@ -11,6 +11,9 @@ class SimulationService:
         cap = bin_data.get('capacity', 500)
         threshold = bin_data.get('dynamic_threshold', bin_data.get('threshold', 80))
         time_to_threshold = self._time_to_threshold_hours(bin_data, threshold)
+        # Zero fill rate alert
+        if rate <= 0:
+            print(f"⚠️ ALERT: Bin {bin_data.get('id','?')} has zero fill rate. Sensor or data issue.")
 
         # Configurable weights
         w_fill = getattr(self.config, 'URGENCY_WEIGHT_FILL', 0.5)
@@ -25,8 +28,19 @@ class SimulationService:
             w_rate * (rate / 50) +
             w_time * time_urgency
         )
+        # Escalate urgency if bin is repeatedly just below threshold
+        threshold = bin_data.get('dynamic_threshold', bin_data.get('threshold', 80))
+        near_threshold = (fill >= (threshold - 2)) and (fill < threshold)
+        if near_threshold:
+            if 'near_threshold_count' not in bin_data:
+                bin_data['near_threshold_count'] = 1
+            else:
+                bin_data['near_threshold_count'] += 1
+            if bin_data['near_threshold_count'] >= 3:
+                urgency = min(1.0, urgency + 0.2)  # escalate urgency
+        else:
+            bin_data['near_threshold_count'] = 0
         urgency = max(0.0, min(1.0, urgency))  # Clamp between 0 and 1
-
         return {'score': urgency}
     """Manages simulation state and coordinates updates"""
     
@@ -194,13 +208,14 @@ class SimulationService:
             # Add collection time and safety buffer
             collection_hours = 5 / 60  # 5 minutes
             
-            # Adaptive safety buffer based on fill rate
+            # Adaptive safety buffer based on fill rate and traffic
+            traffic_risk = traffic_density if traffic_density > 2 else 1.0
             if r > 30:
-                safety_buffer = 0.90
+                safety_buffer = 1.2 * traffic_risk
             elif r > 20:
-                safety_buffer = 0.80
+                safety_buffer = 1.0 * traffic_risk
             else:
-                safety_buffer = 0.50
+                safety_buffer = 0.7 * traffic_risk
             
             T_min = travel_with_traffic + collection_hours + safety_buffer
             
@@ -254,6 +269,7 @@ class SimulationService:
             if fill_level >= target_threshold:
                 return 0.0
             if fill_rate <= 0:
+                print(f"⚠️ ALERT: Bin {bin_data.get('id','?')} has zero fill rate. Sensor or data issue.")
                 return float('inf')
             liters_needed = max(0.0, ((target_threshold - fill_level) / 100.0) * capacity)
             return liters_needed / fill_rate
