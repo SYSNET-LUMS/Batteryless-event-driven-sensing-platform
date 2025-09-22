@@ -11,6 +11,8 @@ class SimulationService:
         cap = bin_data.get('capacity', 500)
         threshold = bin_data.get('dynamic_threshold', bin_data.get('threshold', 80))
         time_to_threshold = self._time_to_threshold_hours(bin_data, threshold)
+        # Also compute time to overflow (100%) for stronger escalation
+        time_to_overflow = self._time_to_threshold_hours(bin_data, 100.0)
         # Zero fill rate alert
         if rate <= 0:
             print(f"⚠️ ALERT: Bin {bin_data.get('id','?')} has zero fill rate. Sensor or data issue.")
@@ -23,11 +25,26 @@ class SimulationService:
         # Sigmoid for time-to-threshold (bins close to threshold get higher urgency)
         time_urgency = 1 / (1 + math.exp(time_to_threshold - 4))  # 4 hours as inflection
 
+        # Additional escalation if time to overflow is short
+        overflow_urgency = 0.0
+        if time_to_overflow <= 0.5:  # <30 minutes to overflow
+            overflow_urgency = 1.0
+        elif time_to_overflow <= 1.0:  # <60 minutes
+            overflow_urgency = 0.7
+        elif time_to_overflow <= 2.0:  # <2 hours
+            overflow_urgency = 0.4
+        else:
+            overflow_urgency = 0.0
+
+        # Base urgency
         urgency = (
             w_fill * (fill / 100) +
             w_rate * (rate / 50) +
             w_time * time_urgency
         )
+
+        # Blend in overflow urgency (weighted so it can dominate near overflow)
+        urgency = min(1.2, urgency + 0.6 * overflow_urgency)
         # Escalate urgency if bin is repeatedly just below threshold
         threshold = bin_data.get('dynamic_threshold', bin_data.get('threshold', 80))
         near_threshold = (fill >= (threshold - 2)) and (fill < threshold)
@@ -196,6 +213,10 @@ class SimulationService:
         try:
             C = bin_data['capacity']
             r = bin_data['fillRate']
+            current_fill = bin_data.get('fillLevel', 0)
+            # Guard
+            if r <= 0:
+                return bin_data.get('threshold', 80)
             
             # Get travel time to depot
             base_travel_hours = self._get_travel_time_to_depot(bin_data, depot_data)
@@ -219,9 +240,49 @@ class SimulationService:
             
             T_min = travel_with_traffic + collection_hours + safety_buffer
             
-            # Calculate threshold
-            threshold = 100 * (1 - (r * T_min / C))
-            return max(50, min(95, threshold))  # Clamp between 50-95%
+            # Calculate base threshold using the theoretical formula (time for remaining capacity fraction)
+            base_threshold = 100 * (1 - (r * T_min / C))
+            
+            # Projected time until overflow and until base_threshold
+            time_to_overflow = self._time_to_threshold_hours(bin_data, 100.0)
+            time_to_base_threshold = self._time_to_threshold_hours(bin_data, base_threshold)
+
+            # If truck cannot arrive before overflow, aggressively lower threshold
+            arrival_feasible = time_to_overflow > T_min
+            if not arrival_feasible:
+                base_threshold = min(base_threshold, current_fill + 2)  # force immediate dispatch
+            else:
+                # If arrival is just barely feasible (< 1.2x slack), tighten threshold a bit
+                if time_to_overflow < (T_min * 1.2):
+                    base_threshold -= 5
+
+            # If time to base threshold is already very short (< travel time), drop further
+            if time_to_base_threshold <= T_min:
+                base_threshold = min(base_threshold, current_fill + 5)
+            
+            # Apply fill-level adjustment: lower threshold as bin gets fuller
+            # This creates urgency for bins that are already quite full
+            fill_urgency_factor = 1.0
+            if current_fill >= 70:
+                # High fill: reduce threshold significantly (more urgent)
+                fill_urgency_factor = 0.85 - (current_fill - 70) * 0.01  # 0.85 to 0.55
+            elif current_fill >= 50:
+                # Medium fill: reduce threshold moderately
+                fill_urgency_factor = 0.95 - (current_fill - 50) * 0.005  # 0.95 to 0.85
+            # Low fill (< 50%): no adjustment needed
+            
+            adjusted_threshold = base_threshold * fill_urgency_factor
+
+            # Final safety: never set DT above current fill + realistic growth window
+            # Compute expected fill growth during arrival
+            expected_growth = (r * T_min) / C * 100  # percent points
+            upper_cap = min(95, current_fill + expected_growth + 10)
+            adjusted_threshold = min(adjusted_threshold, upper_cap)
+            
+            # Final threshold with proper bounds
+            final_threshold = max(50, min(95, adjusted_threshold))
+            
+            return final_threshold
             
         except Exception as e:
             print(f"⚠️ Dynamic threshold calculation error: {e}")
