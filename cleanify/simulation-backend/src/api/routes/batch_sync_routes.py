@@ -30,15 +30,28 @@ def batch_sync():
         repo._id_counters['truck'] = 0
         repo._id_counters['depot'] = 0
         # Add new items with validation/defaults
-        for bin_data in data.get('bins', []):
-            validated_bin = validate_and_apply_defaults('bin', bin_data)
-            repo.add_bin(validated_bin)
-        for truck_data in data.get('trucks', []):
-            validated_truck = validate_and_apply_defaults('truck', truck_data)
-            repo.add_truck(validated_truck)
-        for depot_data in data.get('depots', []):
-            validated_depot = validate_and_apply_defaults('depot', depot_data)
-            repo.add_depot(validated_depot)
+        bins = [validate_and_apply_defaults('bin', bin_data) for bin_data in data.get('bins', [])]
+        trucks = [validate_and_apply_defaults('truck', truck_data) for truck_data in data.get('trucks', [])]
+        depots = [validate_and_apply_defaults('depot', depot_data) for depot_data in data.get('depots', [])]
+
+        # Assign IDs in a single pass
+        repo._bins = []
+        for i, bin_data in enumerate(bins, 1):
+            bin_data['id'] = f"BIN_{i}"
+            repo._bins.append(bin_data)
+        repo._id_counters['bin'] = len(bins)
+
+        repo._trucks = []
+        for i, truck_data in enumerate(trucks, 1):
+            truck_data['id'] = f"TRUCK_{i}"
+            repo._trucks.append(truck_data)
+        repo._id_counters['truck'] = len(trucks)
+
+        repo._depots = []
+        for i, depot_data in enumerate(depots, 1):
+            depot_data['id'] = f"DEPOT_{i}"
+            repo._depots.append(depot_data)
+        repo._id_counters['depot'] = len(depots)
         # Ensure agent is initialized if depots exist
         if repo.get_depots() and getattr(current_app, 'agent', None) is None:
             from services import WasteCollectionAgent

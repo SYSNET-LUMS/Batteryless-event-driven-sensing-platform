@@ -166,12 +166,12 @@ function showBackendError() {
 
 function initializeMap() {
     // Initialize map centered on Islamabad
-    map = L.map('map').setView([33.6844, 73.0479], 13);
-    
+    map = L.map('map').setView([33.6844, 73.0479], 13);    
     // Add tile layer
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
         attribution: '© OpenStreetMap contributors'
     }).addTo(map);
+    // No marker clustering: all markers will be added directly to map
 }
 
 function initializeControls() {
@@ -236,10 +236,7 @@ function createMarker(item, type) {
         iconAnchor: [config.size[0]/2, config.size[1]/2]
     });
 
-    const marker = L.marker([item.lat, item.lng], { 
-        icon: icon,
-        draggable: true 
-    }).addTo(map);
+    const marker = L.marker([item.lat, item.lng], { icon: icon, draggable: true }).addTo(map);
 
     marker.on('click', () => openEditModal(item, type));
     marker.on('drag', (e) => updateItemPosition(item, type, e.target.getLatLng()));
@@ -1507,50 +1504,64 @@ function handleFileLoad(event) {
 function loadSystemFromState(systemState) {
     stopSimulation();
     clearAllItems();
-    // Load items
-    ['bins', 'trucks', 'depots'].forEach(itemType => {
-        const type = itemType.slice(0, -1); // Remove 's'
-        systemState[itemType].forEach(itemData => {
-            const item = { ...itemData, marker: createMarker(itemData, type) };
-            
-            if (type === 'truck') {
-                item.targetBin = null;
-                item.targetDepot = null;
-                item.route = [];
-                item.routeIndex = 0;
-                item.returnRoute = [];
-                item.returnRouteIndex = 0;
-                item.collectionPartners = [];
+
+    // Batch marker creation for bins, trucks, depots
+    function batchCreateMarkers(itemType, type, dataArray, batchSize = 20, delay = 10, callback) {
+        let i = 0;
+        function processBatch() {
+            for (let j = 0; j < batchSize && i < dataArray.length; j++, i++) {
+                const itemData = dataArray[i];
+                const item = { ...itemData, marker: createMarker(itemData, type) };
+                if (type === 'truck') {
+                    item.targetBin = null;
+                    item.targetDepot = null;
+                    item.route = [];
+                    item.routeIndex = 0;
+                    item.returnRoute = [];
+                    item.returnRouteIndex = 0;
+                    item.collectionPartners = [];
+                }
+                items[itemType].push(item);
             }
-            
-            items[itemType].push(item);
-        });
-    });
-
-    // Sync with backend
-    syncLoadedDataWithBackend();
-
-    // Load simulation state
-    if (systemState.simulation) {
-        simulationTime = systemState.simulation.time || 0;
-        collectionsToday = systemState.simulation.collectionsToday || 0;
+            if (i < dataArray.length) {
+                setTimeout(processBatch, delay);
+            } else if (callback) {
+                callback();
+            }
+        }
+        processBatch();
     }
 
-    updateStats();
-    updateSimulationTime();
-    centerMapOnItems();
-
-    console.log(`✅ Loaded ${items.bins.length} bins, ${items.trucks.length} trucks, ${items.depots.length} depots`);
+    let types = ['bins', 'trucks', 'depots'];
+    let idx = 0;
+    function processTypes() {
+        if (idx >= types.length) {
+            // Sync with backend after all markers are created
+            syncLoadedDataWithBackend();
+            // Load simulation state
+            if (systemState.simulation) {
+                simulationTime = systemState.simulation.time || 0;
+                collectionsToday = systemState.simulation.collectionsToday || 0;
+            }
+            updateStats();
+            updateSimulationTime();
+            centerMapOnItems();
+            console.log(`✅ Loaded ${items.bins.length} bins, ${items.trucks.length} trucks, ${items.depots.length} depots`);
+            return;
+        }
+        let itemType = types[idx];
+        let type = itemType.slice(0, -1);
+        batchCreateMarkers(itemType, type, systemState[itemType], 20, 10, () => {
+            idx++;
+            processTypes();
+        });
+    }
+    processTypes();
 }
 
 async function syncLoadedDataWithBackend() {
     try {
-        // Clear only bins, trucks, and depots in backend before syncing
-        await fetch(`${API_BASE}/bins`, { method: 'DELETE' });
-        await fetch(`${API_BASE}/trucks`, { method: 'DELETE' });
-        await fetch(`${API_BASE}/depots`, { method: 'DELETE' });
-
-        // Batch sync all items in one request
+        // Batch sync all items in one request (batch_sync clears items itself)
         const bins = items.bins.map(({ marker, ...bin }) => bin);
         const trucks = items.trucks.map(({ marker, ...truck }) => truck);
         const depots = items.depots.map(({ marker, ...depot }) => depot);
