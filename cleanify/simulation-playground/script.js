@@ -531,7 +531,7 @@ async function startSimulation() {
             await applyAIRoutingDecisions();
             
             // Start simulation loop
-            simulationInterval = setInterval(simulationStep, 1000 / simulationSpeed);
+            simulationInterval = setInterval(simulationStep, Math.max(20, 1000 / simulationSpeed));
             
             console.log('✅ Simulation started');
         }
@@ -744,7 +744,7 @@ async function simulationStep() {
 
     if (simulationInterval && isSimulationRunning) {  // Add isSimulationRunning check
         clearInterval(simulationInterval);
-        simulationInterval = setInterval(simulationStep, Math.max(50, 1000 / simulationSpeed));
+        simulationInterval = setInterval(simulationStep, Math.max(20, 1000 / simulationSpeed));
     }
 }
 
