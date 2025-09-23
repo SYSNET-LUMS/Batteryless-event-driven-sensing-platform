@@ -1,11 +1,13 @@
 from typing import Dict, Optional, List, Tuple
 from config.constants import BIN_TRAFFIC_PROFILES
+from services.routing.enhanced_truck_availability_service import EnhancedTruckAvailabilityService
+from services.routing.dynamic_route_optimizer import DynamicRouteOptimizer
 import logging
 
 logger = logging.getLogger(__name__)
 
 class TrafficManager:
-    """Enhanced traffic management service with predictive capabilities"""
+    """Enhanced traffic management service with predictive capabilities and dynamic routing"""
     
     def __init__(self):
         self.normal_traffic_threshold = 3.0
@@ -28,6 +30,14 @@ class TrafficManager:
         # Traffic pattern classification thresholds (inspired by abc.py but enhanced)
         self.heavy_traffic_threshold = 5.0
         self.moderate_traffic_threshold = 3.0
+        
+        # Initialize enhanced services
+        self.enhanced_availability_service = EnhancedTruckAvailabilityService()
+        self.dynamic_optimizer = DynamicRouteOptimizer()
+        
+        # Enhanced routing features
+        self.enable_dynamic_routing = True
+        self.enable_predictive_dispatch = True
     
     def get_bin_specific_density(self, bin_id: str, time_min: int) -> float:
         """Get traffic density for specific bin location"""
@@ -498,9 +508,9 @@ class TrafficManager:
                 'next_light_window': light_window,
                 'upcoming_heavy_periods': heavy_periods[:3],  # Next 3 heavy periods
                 'transitions_next_6h': transitions,
-                'traffic_profile': BIN_TRAFFIC_PROFILES.get(bin_id, {}).get('road_type', 'general')
+                'analysis_timestamp': current_time_min
             }
-            
+        
         except Exception as e:
             logger.error(f"Error getting traffic insights for bin {bin_id}: {e}")
             return {
@@ -508,3 +518,382 @@ class TrafficManager:
                 'error': str(e),
                 'current_level': 'unknown'
             }
+    
+    def get_enhanced_routing_recommendations(self, trucks_data: List[Dict], bins_data: List[Dict],
+                                           schedules: List[Dict], depot_data: Dict,
+                                           current_time_seconds: float) -> Dict:
+        """
+        NEW ENHANCED METHOD: Get comprehensive routing recommendations with smart truck availability
+        
+        This is the main method that implements the user's requirements:
+        1. Only consider available trucks (checking schedules and return times)
+        2. Allow route extension for trucks already on trips when nearby bins need collection
+        
+        Returns detailed routing recommendations with availability analysis
+        """
+        try:
+            if not self.enable_dynamic_routing:
+                logger.info("Dynamic routing disabled, using basic recommendations")
+                return self._get_basic_routing_recommendations(trucks_data, bins_data, current_time_seconds)
+            
+            logger.info(f"Starting enhanced routing analysis for {len(trucks_data)} trucks and {len(bins_data)} bins")
+            
+            # Use the dynamic optimizer to get comprehensive routing solution
+            routing_result = self.dynamic_optimizer.optimize_routes_with_dynamic_availability(
+                trucks_data, bins_data, schedules, depot_data, current_time_seconds
+            )
+            
+            if not routing_result.get('success', False):
+                logger.warning(f"Dynamic routing failed: {routing_result.get('error', 'Unknown error')}")
+                return routing_result.get('fallback_result', self._get_basic_routing_recommendations(
+                    trucks_data, bins_data, current_time_seconds
+                ))
+            
+            optimization_result = routing_result['optimization_result']
+            
+            # Enhance with traffic-aware recommendations
+            traffic_enhanced_result = self._add_traffic_recommendations(
+                optimization_result, current_time_seconds
+            )
+            
+            # Generate executive summary
+            executive_summary = self._generate_executive_routing_summary(traffic_enhanced_result)
+            
+            return {
+                'success': True,
+                'routing_strategy': 'enhanced_dynamic_with_traffic_awareness',
+                'executive_summary': executive_summary,
+                'detailed_results': traffic_enhanced_result,
+                'recommendations': self._extract_actionable_recommendations(traffic_enhanced_result),
+                'timestamp': current_time_seconds
+            }
+            
+        except Exception as e:
+            logger.error(f"Error in enhanced routing recommendations: {e}")
+            return {
+                'success': False,
+                'error': str(e),
+                'fallback_recommendations': self._get_basic_routing_recommendations(
+                    trucks_data, bins_data, current_time_seconds
+                )
+            }
+    
+    def _add_traffic_recommendations(self, optimization_result: Dict, current_time_seconds: float) -> Dict:
+        """Add traffic-aware recommendations to optimization results"""
+        enhanced_result = optimization_result.copy()
+        current_time_min = current_time_seconds // 60
+        
+        # Enhance route extensions with traffic timing
+        if 'route_extensions' in enhanced_result:
+            for extension in enhanced_result['route_extensions']:
+                if extension.get('success', False):
+                    # Add traffic timing advice for extension
+                    extension['traffic_advice'] = self._get_traffic_advice_for_route_extension(
+                        extension, current_time_min
+                    )
+        
+        # Enhance new routes with traffic timing
+        if 'new_routes' in enhanced_result:
+            for route in enhanced_result['new_routes']:
+                if route.get('success', False):
+                    # Add optimal dispatch timing based on traffic
+                    route['optimal_dispatch_timing'] = self._get_optimal_dispatch_timing(
+                        route, current_time_min
+                    )
+        
+        # Add overall traffic strategy recommendations
+        enhanced_result['traffic_strategy'] = self._generate_traffic_strategy(current_time_min)
+        
+        return enhanced_result
+    
+    def _get_traffic_advice_for_route_extension(self, extension: Dict, current_time_min: int) -> Dict:
+        """Generate traffic advice for route extension"""
+        try:
+            # Estimate when extension will occur
+            current_duration = extension.get('optimization_details', {}).get('additional_time_minutes', 30)
+            extension_start_time = current_time_min + current_duration
+            
+            # Get traffic conditions during extension
+            extension_density = self.get_density_at_time(extension_start_time)
+            extension_level = self.classify_traffic_level(extension_density)
+            
+            advice = {
+                'extension_timing': 'optimal' if extension_level == 'light' else 'acceptable' if extension_level == 'moderate' else 'challenging',
+                'traffic_level_during_extension': extension_level,
+                'estimated_traffic_delay': self._estimate_traffic_delay(extension_density, current_duration),
+                'recommendation': ''
+            }
+            
+            # Generate specific recommendations
+            if extension_level == 'heavy':
+                advice['recommendation'] = 'Consider delaying extension until traffic improves, or proceed if bins are critical'
+            elif extension_level == 'moderate':
+                advice['recommendation'] = 'Good timing for extension with moderate traffic impact'
+            else:
+                advice['recommendation'] = 'Excellent timing for extension with minimal traffic delays'
+            
+            return advice
+            
+        except Exception as e:
+            return {'error': str(e), 'recommendation': 'Unable to analyze traffic conditions'}
+    
+    def _get_optimal_dispatch_timing(self, route: Dict, current_time_min: int) -> Dict:
+        """Get optimal dispatch timing for new route considering traffic"""
+        try:
+            truck_id = route.get('truck_id')
+            estimated_duration = route.get('route_metrics', {}).get('estimated_duration_minutes', 60)
+            
+            # Check if delaying dispatch would be beneficial
+            dispatch_analysis = self.find_optimal_dispatch_before_heavy_traffic(
+                current_time_min, estimated_duration, None  # No specific bin ID for route analysis
+            )
+            
+            return {
+                'immediate_dispatch_recommended': dispatch_analysis.get('dispatch', 'now') == 'now',
+                'optimal_delay_minutes': dispatch_analysis.get('delay_min', 0),
+                'traffic_reasoning': dispatch_analysis.get('reason', 'Standard dispatch timing'),
+                'fuel_savings_potential': dispatch_analysis.get('fuel_savings_min', 0)
+            }
+            
+        except Exception as e:
+            return {'error': str(e), 'immediate_dispatch_recommended': True}
+    
+    def _generate_traffic_strategy(self, current_time_min: int) -> Dict:
+        """Generate overall traffic strategy for the current time"""
+        try:
+            current_density = self.get_density_at_time(current_time_min)
+            current_level = self.classify_traffic_level(current_density)
+            
+            # Get next light traffic window
+            light_window = self.find_next_light_traffic_window(current_time_min)
+            
+            # Find upcoming heavy traffic
+            transitions = self.predict_traffic_transition_times(current_time_min, prediction_window_hours=4)
+            next_heavy = next((t for t in transitions if t['to_level'] == 'heavy'), None)
+            
+            strategy = {
+                'current_conditions': {
+                    'level': current_level,
+                    'density': current_density,
+                    'hour': int(current_time_min // 60) % 24
+                },
+                'strategic_recommendations': [],
+                'timing_windows': {
+                    'next_light_traffic': light_window,
+                    'next_heavy_traffic': next_heavy
+                }
+            }
+            
+            # Generate strategic recommendations
+            if current_level == 'light':
+                strategy['strategic_recommendations'].append(
+                    "Excellent time for dispatching - take advantage of light traffic"
+                )
+            elif current_level == 'heavy':
+                if light_window and light_window['time_offset'] <= 60:
+                    strategy['strategic_recommendations'].append(
+                        f"Consider delaying non-critical dispatches {light_window['time_offset']} minutes for better conditions"
+                    )
+                else:
+                    strategy['strategic_recommendations'].append(
+                        "Heavy traffic period - prioritize critical collections only"
+                    )
+            else:  # moderate
+                strategy['strategic_recommendations'].append(
+                    "Moderate traffic - good time for routine dispatches"
+                )
+            
+            # Add route extension recommendations
+            if current_level in ['light', 'moderate']:
+                strategy['strategic_recommendations'].append(
+                    "Good conditions for route extensions - trucks can efficiently collect additional bins"
+                )
+            
+            return strategy
+            
+        except Exception as e:
+            return {'error': str(e)}
+    
+    def _generate_executive_routing_summary(self, detailed_results: Dict) -> Dict:
+        """Generate executive summary of routing decisions"""
+        try:
+            summary = detailed_results.get('optimization_summary', {})
+            availability = detailed_results.get('availability_analysis', {}).get('availability_summary', {})
+            
+            return {
+                'total_trucks_available': availability.get('available_count', 0),
+                'total_trucks_busy': availability.get('busy_count', 0),
+                'total_trucks_scheduled': availability.get('scheduled_count', 0),
+                'route_extensions_possible': availability.get('route_extendable_count', 0),
+                'bins_assigned_for_collection': summary.get('total_bins_assigned', 0),
+                'bins_deferred': summary.get('total_bins_deferred', 0),
+                'efficiency_score': round(summary.get('optimization_efficiency', 0) * 100, 1),
+                'key_decisions': self._extract_key_decisions(detailed_results),
+                'next_review_recommended_minutes': self._recommend_next_review_time(detailed_results)
+            }
+            
+        except Exception as e:
+            return {'error': str(e)}
+    
+    def _extract_key_decisions(self, detailed_results: Dict) -> List[str]:
+        """Extract key routing decisions made"""
+        decisions = []
+        
+        try:
+            # Route extensions
+            extensions = detailed_results.get('route_extensions', [])
+            successful_extensions = [e for e in extensions if e.get('success', False)]
+            if successful_extensions:
+                decisions.append(f"Extended routes for {len(successful_extensions)} trucks to collect additional bins")
+            
+            # New dispatches
+            new_routes = detailed_results.get('new_routes', [])
+            successful_routes = [r for r in new_routes if r.get('success', False)]
+            if successful_routes:
+                decisions.append(f"Created {len(successful_routes)} new optimized routes")
+            
+            # Critical overrides
+            overrides = detailed_results.get('critical_overrides', [])
+            if overrides:
+                decisions.append(f"Override {len(overrides)} scheduled trucks for emergency collections")
+            
+            # Deferrals
+            deferred = detailed_results.get('deferred_collections', [])
+            if deferred:
+                decisions.append(f"Deferred {len(deferred)} bin collections due to truck unavailability")
+            
+            return decisions[:5]  # Limit to top 5 decisions
+            
+        except Exception:
+            return ["Unable to analyze routing decisions"]
+    
+    def _recommend_next_review_time(self, detailed_results: Dict) -> int:
+        """Recommend when to next review routing decisions"""
+        try:
+            # If there are deferred collections, review sooner
+            deferred_count = len(detailed_results.get('deferred_collections', []))
+            if deferred_count > 0:
+                return 15  # 15 minutes
+            
+            # If there are route extensions happening, review when they complete
+            extensions = detailed_results.get('route_extensions', [])
+            if extensions:
+                avg_extension_time = sum(
+                    e.get('estimated_additional_time', 30) 
+                    for e in extensions if e.get('success', False)
+                ) / max(len(extensions), 1)
+                return int(avg_extension_time + 15)  # Extension time + buffer
+            
+            # Normal review interval
+            return 60  # 1 hour
+            
+        except Exception:
+            return 30  # Default 30 minutes
+    
+    def _extract_actionable_recommendations(self, detailed_results: Dict) -> List[Dict]:
+        """Extract actionable recommendations for operators"""
+        recommendations = []
+        
+        try:
+            # Immediate actions for route extensions
+            extensions = detailed_results.get('route_extensions', [])
+            for extension in extensions:
+                if extension.get('success', False):
+                    truck_id = extension.get('truck_id')
+                    additional_bins = extension.get('additional_bins', [])
+                    
+                    recommendations.append({
+                        'priority': 'high',
+                        'action': 'extend_route',
+                        'truck_id': truck_id,
+                        'details': f"Extend route for truck {truck_id} to collect {len(additional_bins)} additional bins",
+                        'estimated_time': extension.get('estimated_additional_time', 'unknown'),
+                        'traffic_advice': extension.get('traffic_advice', {}).get('recommendation', 'Proceed with extension')
+                    })
+            
+            # New route dispatches
+            new_routes = detailed_results.get('new_routes', [])
+            for route in new_routes:
+                if route.get('success', False):
+                    truck_id = route.get('truck_id')
+                    bin_count = len(route.get('optimized_route', []))
+                    dispatch_timing = route.get('optimal_dispatch_timing', {})
+                    
+                    priority = 'high' if dispatch_timing.get('immediate_dispatch_recommended', True) else 'medium'
+                    action_text = "Dispatch immediately" if priority == 'high' else f"Delay dispatch {dispatch_timing.get('optimal_delay_minutes', 0)} minutes"
+                    
+                    recommendations.append({
+                        'priority': priority,
+                        'action': 'dispatch_truck',
+                        'truck_id': truck_id,
+                        'details': f"{action_text} for truck {truck_id} to collect {bin_count} bins",
+                        'timing_reason': dispatch_timing.get('traffic_reasoning', 'Optimal timing'),
+                        'potential_fuel_savings': dispatch_timing.get('fuel_savings_potential', 0)
+                    })
+            
+            # Critical overrides
+            overrides = detailed_results.get('critical_overrides', [])
+            for override in overrides:
+                if override.get('success', False):
+                    recommendations.append({
+                        'priority': 'critical',
+                        'action': 'emergency_dispatch',
+                        'truck_id': override.get('truck_id'),
+                        'details': f"EMERGENCY: Override scheduled truck for critical bin collection",
+                        'overridden_schedule': override.get('overridden_schedule_id'),
+                        'reason': override.get('urgency_reason', 'Critical emergency')
+                    })
+            
+            # Sort by priority
+            priority_order = {'critical': 0, 'high': 1, 'medium': 2, 'low': 3}
+            recommendations.sort(key=lambda x: priority_order.get(x.get('priority', 'low'), 3))
+            
+            return recommendations[:10]  # Limit to top 10 recommendations
+            
+        except Exception as e:
+            logger.error(f"Error extracting recommendations: {e}")
+            return [{'priority': 'low', 'action': 'error', 'details': f'Error generating recommendations: {str(e)}'}]
+    
+    def _get_basic_routing_recommendations(self, trucks_data: List[Dict], bins_data: List[Dict], 
+                                         current_time_seconds: float) -> Dict:
+        """Fallback basic routing recommendations when enhanced routing fails"""
+        try:
+            current_time_min = current_time_seconds // 60
+            
+            # Simple analysis
+            available_trucks = [t for t in trucks_data if t.get('status') == 'idle']
+            urgent_bins = [b for b in bins_data 
+                          if b.get('fillLevel', 0) >= b.get('threshold', 80)]
+            
+            return {
+                'success': True,
+                'routing_strategy': 'basic_fallback',
+                'executive_summary': {
+                    'total_trucks_available': len(available_trucks),
+                    'bins_needing_collection': len(urgent_bins),
+                    'efficiency_score': 70.0,  # Conservative estimate
+                    'key_decisions': ['Using basic routing due to enhanced system unavailability']
+                },
+                'recommendations': [{
+                    'priority': 'medium',
+                    'action': 'basic_dispatch',
+                    'details': f'Dispatch {min(len(available_trucks), len(urgent_bins))} trucks for urgent bin collection',
+                    'truck_count': min(len(available_trucks), len(urgent_bins))
+                }] if available_trucks and urgent_bins else []
+            }
+            
+        except Exception as e:
+            return {
+                'success': False,
+                'error': str(e),
+                'routing_strategy': 'failed_fallback'
+            }
+    
+    def _estimate_traffic_delay(self, density: float, base_duration_min: float) -> float:
+        """Estimate additional delay due to traffic density"""
+        if density <= 1.0:
+            return 0
+        else:
+            # Traffic delay increases non-linearly with density
+            delay_factor = (density - 1.0) * 0.3  # 30% delay per density unit above 1.0
+            return base_duration_min * delay_factor
