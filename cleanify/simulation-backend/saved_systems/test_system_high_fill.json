@@ -1,0 +1,94 @@
+{
+  "bins": [
+    {
+      "capacity": 300,
+      "fillLevel": 75,
+      "fillRate": 4,
+      "id": "BIN_1",
+      "lat": 33.696654905967556,
+      "lng": 73.06026220321657,
+      "threshold": 80
+    },
+    {
+      "capacity": 200,
+      "fillLevel": 85,
+      "fillRate": 4.6,
+      "id": "BIN_2",
+      "lat": 33.69833302399957,
+      "lng": 73.05800914764406,
+      "threshold": 80
+    },
+    {
+      "capacity": 100,
+      "fillLevel": 90,
+      "fillRate": 3,
+      "id": "BIN_3",
+      "lat": 33.698029536996,
+      "lng": 73.06092739105226,
+      "threshold": 80
+    },
+    {
+      "capacity": 150,
+      "fillLevel": 78,
+      "fillRate": 6,
+      "id": "BIN_4",
+      "lat": 33.659388674749906,
+      "lng": 73.06034803390504,
+      "threshold": 80
+    }
+  ],
+  "trucks": [
+    {
+      "capacity": 1000,
+      "currentLoad": 0,
+      "id": "TRUCK_1",
+      "lat": 33.676211369282264,
+      "lng": 73.06521892547609,
+      "speed": 50,
+      "status": "idle",
+      "targetBin": null,
+      "targetDepot": null,
+      "route": [],
+      "routeIndex": 0,
+      "returnRoute": [],
+      "returnRouteIndex": 0,
+      "collectionPartners": []
+    },
+    {
+      "capacity": 1200,
+      "currentLoad": 0,
+      "id": "TRUCK_2",
+      "lat": 33.676211369282264,
+      "lng": 73.06521892547609,
+      "speed": 50,
+      "status": "idle",
+      "targetBin": null,
+      "targetDepot": null,
+      "route": [],
+      "routeIndex": 0,
+      "returnRoute": [],
+      "returnRouteIndex": 0,
+      "collectionPartners": []
+    }
+  ],
+  "depots": [
+    {
+      "id": "DEPOT_1",
+      "lat": 33.67631850965762,
+      "lng": 73.06513309478761,
+      "name": "Default Depot"
+    }
+  ],
+  "schedules": [],
+  "id_counters": {
+    "bin": 4,
+    "truck": 2,
+    "depot": 1,
+    "schedule": 0
+  },
+  "metadata": {
+    "saved_at": "2025-09-23T12:15:00.000000",
+    "filename": "test_system_high_fill.json",
+    "version": "2.0-test-enhanced-traffic"
+  }
+}
