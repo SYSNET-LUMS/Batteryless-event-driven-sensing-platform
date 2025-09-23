@@ -5,9 +5,12 @@ from services.clustering_service import ClusteringService
 from services.external.osrm_service import OSRMService
 from services.external.vroom_service import VROOMService
 from services.routing.optimization_service import OptimizationService
+import logging
+
+logger = logging.getLogger(__name__)
 
 class WasteCollectionAgent:
-    """Main coordination layer with VROOM-powered optimization"""
+    """Main coordination layer with VROOM-powered optimization and enhanced clustering"""
     
     def __init__(self, api_key: Optional[str] = None):
         self.api_key = api_key
@@ -81,18 +84,29 @@ class WasteCollectionAgent:
             target_bin, cluster_bins, truck_capacity, current_load, simulation_time
         )
     
-    def get_or_create_clusters(self, bins_data: List[Dict]) -> Dict:
-        """Get cached clusters or create new ones using DBSCAN"""
+    def get_clusters(self, bins_data: List[Dict]) -> Dict:
+        """Get cached clusters or create new ones using enhanced adaptive clustering"""
         if (self.cached_clusters is None or 
             len(bins_data) != self.cached_bin_count):
             
-            distance_matrix = self.clustering_service.create_bin_distance_matrix(bins_data)
-            self.cached_clusters = self.clustering_service.create_clusters_dbscan(
-                bins_data, distance_matrix, eps_meters=300, min_samples=2
-            )
+            # Use adaptive clustering for better results
+            self.cached_clusters = self.clustering_service.create_adaptive_clusters(bins_data)
             self.cached_bin_count = len(bins_data)
+            
+            # Log clustering results
+            logger.info(f"Created {len(self.cached_clusters)} clusters for {len(bins_data)} bins")
+            cluster_info = self.clustering_service.get_cluster_info(self.cached_clusters)
+            
+            for cluster_id, info in cluster_info.items():
+                quality = info.get('quality_metrics', {})
+                logger.debug(f"Cluster {cluster_id}: {info['bin_ids']} - {quality.get('quality_rating', 'unknown')} quality")
                     
         return self.cached_clusters
+    
+    # Legacy method name for compatibility
+    def get_or_create_clusters(self, bins_data: List[Dict]) -> Dict:
+        """Legacy method - redirects to enhanced get_clusters"""
+        return self.get_clusters(bins_data)
     
     def calculate_dynamic_threshold(self, bin_data: Dict, simulation_time_seconds: float, 
                                    depot_data: Optional[Dict] = None) -> float:
