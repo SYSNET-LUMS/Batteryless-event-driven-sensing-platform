@@ -131,6 +131,33 @@ class DecisionService:
             if bin_data['id'] != target_bin['id']:
                 result_bins.append(bin_data)
 
+        # FUEL EFFICIENCY OPTIMIZATION: Maximize truck load from same cluster
+        current_selection_volume = sum(b.get('current_fill', b.get('fillLevel', 0) * b.get('capacity', 500) / 100) for b in result_bins)
+        remaining_space = remaining_capacity - current_selection_volume
+        
+        if remaining_space > 0 and cluster_bins:
+            # Find bins from same cluster that aren't in collection queue but have good fill levels
+            selected_ids = {b['id'] for b in result_bins}
+            additional_candidates = [b for b in cluster_bins if b['id'] not in selected_ids]
+            
+            # Sort by fill level (highest first) to maximize efficiency
+            additional_candidates.sort(key=lambda x: x.get('current_fill', x.get('fillLevel', 0) * x.get('capacity', 500) / 100), reverse=True)
+            
+            # Greedily add bins that fit, prioritizing higher fill levels
+            for candidate in additional_candidates:
+                candidate_volume = candidate.get('current_fill', candidate.get('fillLevel', 0) * candidate.get('capacity', 500) / 100)
+                
+                # Only collect if bin has meaningful fill level (at least 50L or 20% of capacity)
+                min_worthwhile = max(50, candidate.get('capacity', 500) * 0.2)
+                
+                if candidate_volume >= min_worthwhile and candidate_volume <= remaining_space:
+                    result_bins.append(candidate)
+                    remaining_space -= candidate_volume
+                    
+                    # If truck is nearly full (>90%), stop looking for more bins
+                    if remaining_space < (truck_capacity * 0.1):
+                        break
+
         return result_bins
     
     def check_vroom_availability(self) -> Dict:
