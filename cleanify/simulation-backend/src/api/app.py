@@ -9,6 +9,7 @@ from services import (
     FileService,
     ScheduleService
 )
+from services.external.osrm_service import OSRMService
 from .routes import (
     system_routes,
     item_routes,
@@ -34,8 +35,10 @@ def create_app(config: Config = None) -> Flask:
     from repositories.system_repository import get_system_repository
     app.system_repository = get_system_repository()
     app.agent = None
-    app.clustering_service = ClusteringService(config)
-    app.routing_service = RoutingService(config)
+    # Create shared OSRM service instance to enable cross-service caching
+    app.osrm_service = OSRMService(config)
+    app.clustering_service = ClusteringService(config, osrm_service=app.osrm_service)
+    app.routing_service = RoutingService(config, osrm_service=app.osrm_service)
     app.file_service = FileService(config.SAVES_DIR)
     app.schedule_service = ScheduleService()
     app.config_obj = config

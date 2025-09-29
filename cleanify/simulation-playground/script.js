@@ -983,6 +983,11 @@ async function assignTruckToMultipleBins(truck, binIds) {
 }
 
 async function assignTruckToRoute(truck, bin) {
+    if (truck._routePending) {
+        console.log(`⏳ Route request already pending for ${truck.id}`);
+        return;
+    }
+    truck._routePending = true;
     try {
         const response = await fetch(`${API_BASE}/route`, {
         method: 'POST',
@@ -1018,10 +1023,17 @@ async function assignTruckToRoute(truck, bin) {
         truck.targetBin = bin;
         truck.status = 'traveling';
         truck.route = [];
+    } finally {
+        truck._routePending = false;
     }
 }
 
 async function getTruckReturnRoute(truck, depot) {
+    if (truck._returnRoutePending) {
+        console.log(`⏳ Return route request already pending for ${truck.id}`);
+        return;
+    }
+    truck._returnRoutePending = true;
     try {
         const response = await fetch(`${API_BASE}/route`, {
         method: 'POST',
@@ -1050,6 +1062,8 @@ async function getTruckReturnRoute(truck, depot) {
         console.error('Failed to get return route:', error);
         truck.returnRoute = [];
         truck.returnRouteIndex = 0;
+    } finally {
+        truck._returnRoutePending = false;
     }
 }
 
