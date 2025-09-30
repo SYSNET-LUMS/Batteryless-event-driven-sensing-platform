@@ -95,20 +95,11 @@
     {
       "lat": 33.60182376607769,
       "lng": 73.06899477589937,
-      "capacity": 1000,
-      "speed": 50,
-      "currentLoad": 0,
-      "status": "idle",
-      "id": "TRUCK_1"
-    },
-    {
-      "lat": 33.60182376607769,
-      "lng": 73.06899477589937,
       "capacity": 2000,
       "speed": 50,
       "currentLoad": 0,
       "status": "idle",
-      "id": "TRUCK_2"
+      "id": "TRUCK_1"
     },
     {
       "lat": 33.60182376607769,
@@ -117,16 +108,7 @@
       "speed": 50,
       "currentLoad": 0,
       "status": "idle",
-      "id": "TRUCK_3"
-    },
-    {
-      "lat": 33.60182376607769,
-      "lng": 73.06903843289655,
-      "capacity": 1500,
-      "speed": 50,
-      "currentLoad": 0,
-      "status": "idle",
-      "id": "TRUCK_4"
+      "id": "TRUCK_2"
     }
   ],
   "depots": [

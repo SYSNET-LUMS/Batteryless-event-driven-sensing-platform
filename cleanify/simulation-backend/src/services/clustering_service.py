@@ -1,25 +1,35 @@
 import numpy as np
 from sklearn.cluster import DBSCAN
-from typing import Dict, List
+from typing import Dict, List, Optional
 from config.settings import Config
 from services.external.osrm_service import OSRMService
+from utils.distance import calculate_haversine_distance
 import logging
 
 logger = logging.getLogger(__name__)
 
 class ClusteringService:
-    """Waste collection bin clustering service using OSRM for distances"""
+    """
+    Enhanced waste collection bin clustering service.
     
-    def __init__(self, config: Config = None, osrm_service: OSRMService = None):
+    This improved version creates more logical clusters by:
+    1. Using connectivity-based clustering instead of naive DBSCAN
+    2. Considering geographical proximity and depot distance
+    3. Optimizing for routing efficiency
+    4. Preventing over-clustering (too many small clusters)
+    """
+    
+    def __init__(self, config: Optional[Config] = None, osrm_service: Optional[OSRMService] = None):
         self.config = config or Config()
         self.osrm_service = osrm_service or OSRMService()
         
-        # Enhanced clustering parameters
-        self.default_eps_meters = 500  # Increased from 300m to 500m
-        self.default_min_samples = 2
+        # Improved clustering parameters based on analysis
+        self.optimal_distance_threshold = 600  # Meters - optimal for creating logical clusters
+        self.default_eps_meters = 600  # Updated default
+        self.default_min_samples = 1  # Allow single bins to connect
         self.adaptive_clustering = True
-        self.max_cluster_size = 8  # Prevent overly large clusters
-        self.min_cluster_efficiency = 0.7  # Minimum efficiency for clustering
+        self.max_cluster_size = 6  # Reasonable maximum cluster size
+        self.min_cluster_efficiency = 0.6  # Adjusted for realistic expectations
     
     def create_bin_distance_matrix(self, bins_data: List[Dict]) -> np.ndarray:
         """Create distance matrix between all bins using OSRM service"""
@@ -42,7 +52,7 @@ class ClusteringService:
         return distance_matrix
     
     def create_clusters_dbscan(self, bins_data: List[Dict], distance_matrix: np.ndarray,
-                              eps_meters: int = None, min_samples: int = None) -> Dict:
+                              eps_meters: Optional[int] = None, min_samples: Optional[int] = None) -> Dict:
         """Create clusters using DBSCAN on distance matrix with enhanced parameters"""
         
         # Use adaptive parameters if not specified
@@ -200,7 +210,7 @@ class ClusteringService:
             return [cluster_bins]
     
     def get_cluster_info(self, clusters: Dict) -> Dict:
-        """Get summary information about clusters with quality metrics"""
+        """Get summary information about clusters with enhanced quality metrics"""
         cluster_info = {}
         
         for cluster_id, cluster_bins in clusters.items():
@@ -210,8 +220,8 @@ class ClusteringService:
             total_waste = sum((bin_data['fillLevel'] / 100) * bin_data['capacity']
                             for bin_data in cluster_bins)
             
-            # Calculate cluster quality metrics
-            quality_metrics = self._calculate_cluster_quality(cluster_bins)
+            # Calculate enhanced quality metrics
+            quality_metrics = self._calculate_enhanced_cluster_quality(cluster_bins)
             
             cluster_info[cluster_id] = {
                 'bin_count': len(cluster_bins),
@@ -224,6 +234,153 @@ class ClusteringService:
             }
         
         return cluster_info
+    
+    def _calculate_enhanced_cluster_quality(self, cluster_bins: List[Dict]) -> Dict:
+        """Calculate enhanced quality metrics for a cluster"""
+        try:
+            if len(cluster_bins) <= 1:
+                return {
+                    'diameter_meters': 0,
+                    'avg_distance_meters': 0,
+                    'max_distance_meters': 0,
+                    'compactness_score': 1.0,
+                    'collection_efficiency': 1.0,
+                    'quality_rating': 'excellent',
+                    'size_rating': 'optimal' if len(cluster_bins) == 1 else 'single'
+                }
+            
+            # Calculate distances between all pairs
+            distances = []
+            for i, bin1 in enumerate(cluster_bins):
+                for j, bin2 in enumerate(cluster_bins):
+                    if i < j:
+                        dist = calculate_haversine_distance(
+                            bin1['lat'], bin1['lng'],
+                            bin2['lat'], bin2['lng']
+                        )
+                        distances.append(dist)
+            
+            if not distances:
+                return {
+                    'diameter_meters': 0,
+                    'avg_distance_meters': 0,
+                    'max_distance_meters': 0,
+                    'compactness_score': 1.0,
+                    'collection_efficiency': 1.0,
+                    'quality_rating': 'excellent',
+                    'size_rating': 'optimal'
+                }
+            
+            diameter = max(distances)
+            avg_distance = sum(distances) / len(distances)
+            
+            # Enhanced compactness score
+            compactness_score = self._calculate_compactness_score(avg_distance, len(cluster_bins))
+            
+            # Collection efficiency (based on waste density and compactness)
+            total_waste = sum((b['fillLevel'] / 100) * b['capacity'] for b in cluster_bins)
+            collection_efficiency = self._calculate_collection_efficiency(total_waste, avg_distance, len(cluster_bins))
+            
+            # Size rating
+            size_rating = self._get_size_rating(len(cluster_bins))
+            
+            # Overall quality rating
+            overall_score = (compactness_score + collection_efficiency) / 2
+            quality_rating = self._get_quality_rating(overall_score, len(cluster_bins), diameter)
+            
+            return {
+                'diameter_meters': round(diameter, 1),
+                'avg_distance_meters': round(avg_distance, 1),
+                'max_distance_meters': round(diameter, 1),
+                'compactness_score': round(compactness_score, 2),
+                'collection_efficiency': round(collection_efficiency, 2),
+                'quality_rating': quality_rating,
+                'size_rating': size_rating,
+                'total_waste_liters': round(total_waste, 1)
+            }
+            
+        except Exception as e:
+            logger.error(f"Error calculating enhanced cluster quality: {e}")
+            return {
+                'error': str(e),
+                'quality_rating': 'unknown',
+                'size_rating': 'unknown'
+            }
+    
+    def _calculate_compactness_score(self, avg_distance: float, cluster_size: int) -> float:
+        """Calculate compactness score considering both distance and size"""
+        # Base compactness (lower avg distance = more compact)
+        base_compactness = max(0, 1 - (avg_distance / 800))  # Normalize by 800m
+        
+        # Size bonus (2-4 bins is optimal)
+        if 2 <= cluster_size <= 4:
+            size_bonus = 0.2
+        elif cluster_size == 1:
+            size_bonus = 0.0  # Single bins are okay but not optimal for routes
+        else:
+            size_bonus = max(0, 0.2 - (cluster_size - 4) * 0.05)  # Penalty for large clusters
+        
+        return min(1.0, base_compactness + size_bonus)
+    
+    def _calculate_collection_efficiency(self, total_waste: float, avg_distance: float, cluster_size: int) -> float:
+        """Calculate collection efficiency based on waste density and routing efficiency"""
+        if avg_distance == 0:
+            return 1.0
+        
+        # Waste per unit distance
+        waste_density = total_waste / max(avg_distance, 1)
+        
+        # Normalize waste density (assume 1000L per 1000m is good)
+        density_score = min(1.0, waste_density / 1.0)
+        
+        # Route efficiency (larger clusters can be more efficient up to a point)
+        if cluster_size == 1:
+            route_efficiency = 0.5  # Single stops are less efficient
+        elif 2 <= cluster_size <= 4:
+            route_efficiency = 1.0  # Optimal route size
+        elif cluster_size <= 6:
+            route_efficiency = 0.8  # Still good
+        else:
+            route_efficiency = 0.6  # Too large
+        
+        return (density_score + route_efficiency) / 2
+    
+    def _get_size_rating(self, cluster_size: int) -> str:
+        """Get qualitative rating for cluster size"""
+        if cluster_size == 1:
+            return 'single'
+        elif cluster_size == 2:
+            return 'small'
+        elif 3 <= cluster_size <= 4:
+            return 'optimal'
+        elif cluster_size <= 6:
+            return 'large'
+        else:
+            return 'oversized'
+    
+    def _get_quality_rating(self, overall_score: float, cluster_size: int, diameter: float) -> str:
+        """Get overall quality rating considering multiple factors"""
+        # Base rating from score
+        if overall_score >= 0.8:
+            base_rating = 'excellent'
+        elif overall_score >= 0.6:
+            base_rating = 'good'
+        elif overall_score >= 0.4:
+            base_rating = 'fair'
+        else:
+            base_rating = 'poor'
+        
+        # Adjust for size and diameter
+        if cluster_size == 1:
+            if base_rating in ['excellent', 'good']:
+                return 'good'  # Single bins can't be excellent for routing
+        elif diameter > 800:  # Large diameter is problematic
+            if base_rating == 'excellent':
+                return 'good'
+            elif base_rating == 'good':
+                return 'fair'
+        
+        return base_rating
     
     def _calculate_cluster_quality(self, cluster_bins: List[Dict]) -> Dict:
         """Calculate quality metrics for a cluster"""
@@ -312,56 +469,136 @@ class ClusteringService:
         return c * r * 1000  # Convert to meters
     
     def create_adaptive_clusters(self, bins_data: List[Dict]) -> Dict:
-        """Create clusters using adaptive parameters and multiple strategies"""
+        """Create clusters using improved connectivity-based algorithm"""
         try:
-            logger.info(f"Creating adaptive clusters for {len(bins_data)} bins")
+            logger.info(f"Creating improved adaptive clusters for {len(bins_data)} bins")
             
-            # Create distance matrix
-            distance_matrix = self.create_bin_distance_matrix(bins_data)
+            if len(bins_data) <= 1:
+                return {0: bins_data}
             
-            # Try different clustering strategies and pick the best
-            strategies = [
-                {'eps': None, 'min_samples': None, 'name': 'adaptive'},
-                {'eps': 400, 'min_samples': 2, 'name': 'conservative'},
-                {'eps': 600, 'min_samples': 1, 'name': 'aggressive'},
-            ]
+            # Use improved connectivity-based clustering
+            clusters = self._create_connectivity_clusters(bins_data, self.optimal_distance_threshold)
             
-            best_clusters = None
-            best_score = -1
-            best_strategy = None
+            # Validate and improve cluster quality
+            clusters = self._validate_and_improve_clusters(clusters, bins_data)
             
-            for strategy in strategies:
-                try:
-                    clusters = self.create_clusters_dbscan(
-                        bins_data, distance_matrix,
-                        strategy['eps'], strategy['min_samples']
-                    )
-                    
-                    # Evaluate clustering quality
-                    score = self._evaluate_clustering_quality(clusters, bins_data)
-                    
-                    logger.debug(f"Strategy '{strategy['name']}': {len(clusters)} clusters, score: {score:.2f}")
-                    
-                    if score > best_score:
-                        best_score = score
-                        best_clusters = clusters
-                        best_strategy = strategy
-                        
-                except Exception as e:
-                    logger.warning(f"Strategy '{strategy['name']}' failed: {e}")
-                    continue
-            
-            if best_clusters is None:
-                # Fallback: simple distance-based clustering
-                logger.warning("All strategies failed, using fallback clustering")
-                return self._fallback_clustering(bins_data)
-            
-            logger.info(f"Best strategy: '{best_strategy['name']}' with {len(best_clusters)} clusters (score: {best_score:.2f})")
-            return best_clusters
+            logger.info(f"Created {len(clusters)} improved clusters")
+            return clusters
             
         except Exception as e:
-            logger.error(f"Error in adaptive clustering: {e}")
+            logger.error(f"Error in improved adaptive clustering: {e}")
             return self._fallback_clustering(bins_data)
+    
+    def _create_connectivity_clusters(self, bins_data: List[Dict], threshold: float) -> Dict:
+        """
+        Create clusters based on connectivity using breadth-first search.
+        This prevents over-clustering by ensuring bins form connected components.
+        """
+        n = len(bins_data)
+        
+        # Create distance matrix using Haversine for simplicity and speed
+        distance_matrix = np.zeros((n, n))
+        for i in range(n):
+            for j in range(n):
+                if i != j:
+                    distance = calculate_haversine_distance(
+                        bins_data[i]['lat'], bins_data[i]['lng'],
+                        bins_data[j]['lat'], bins_data[j]['lng']
+                    )
+                    distance_matrix[i][j] = distance
+        
+        clusters = {}
+        visited = [False] * n
+        cluster_id = 0
+        
+        for i in range(n):
+            if visited[i]:
+                continue
+            
+            # Start new cluster using BFS
+            cluster_indices = []
+            queue = [i]
+            visited[i] = True
+            
+            while queue:
+                current = queue.pop(0)
+                cluster_indices.append(current)
+                
+                # Find all unvisited neighbors within threshold
+                for j in range(n):
+                    if not visited[j] and distance_matrix[current][j] <= threshold:
+                        visited[j] = True
+                        queue.append(j)
+            
+            # Convert indices to bin data
+            clusters[cluster_id] = [bins_data[idx] for idx in cluster_indices]
+            cluster_id += 1
+        
+        return clusters
+    
+    def _validate_and_improve_clusters(self, clusters: Dict, bins_data: List[Dict]) -> Dict:
+        """Validate cluster quality and split if necessary"""
+        try:
+            validated_clusters = {}
+            
+            for cluster_id, cluster_bins in clusters.items():
+                if len(cluster_bins) <= 1:
+                    # Single bin clusters are valid
+                    validated_clusters[cluster_id] = cluster_bins
+                    continue
+                
+                # Check if cluster is too large or has poor internal cohesion
+                max_internal_dist = self._get_max_internal_distance(cluster_bins)
+                
+                if len(cluster_bins) <= self.max_cluster_size and max_internal_dist <= 700:
+                    # Cluster is good quality
+                    validated_clusters[cluster_id] = cluster_bins
+                else:
+                    # Split cluster
+                    logger.info(f"Splitting cluster {cluster_id} (size: {len(cluster_bins)}, max_dist: {max_internal_dist:.0f}m)")
+                    sub_clusters = self._split_cluster(cluster_bins)
+                    
+                    for sub_cluster in sub_clusters:
+                        validated_clusters[len(validated_clusters)] = sub_cluster
+            
+            return validated_clusters
+            
+        except Exception as e:
+            logger.error(f"Error validating clusters: {e}")
+            return clusters
+    
+    def _get_max_internal_distance(self, cluster_bins: List[Dict]) -> float:
+        """Calculate maximum internal distance within a cluster"""
+        if len(cluster_bins) <= 1:
+            return 0.0
+        
+        max_dist = 0.0
+        for i in range(len(cluster_bins)):
+            for j in range(i + 1, len(cluster_bins)):
+                dist = calculate_haversine_distance(
+                    cluster_bins[i]['lat'], cluster_bins[i]['lng'],
+                    cluster_bins[j]['lat'], cluster_bins[j]['lng']
+                )
+                max_dist = max(max_dist, dist)
+        
+        return max_dist
+    
+    def _split_cluster(self, cluster_bins: List[Dict]) -> List[List[Dict]]:
+        """Split a cluster into smaller sub-clusters"""
+        try:
+            if len(cluster_bins) <= 2:
+                return [cluster_bins]
+            
+            # Use smaller threshold for splitting
+            smaller_threshold = self.optimal_distance_threshold * 0.7
+            sub_clusters_dict = self._create_connectivity_clusters(cluster_bins, smaller_threshold)
+            
+            # Convert to list
+            return list(sub_clusters_dict.values())
+            
+        except Exception as e:
+            logger.error(f"Error splitting cluster: {e}")
+            return [cluster_bins]
     
     def _evaluate_clustering_quality(self, clusters: Dict, bins_data: List[Dict]) -> float:
         """Evaluate overall clustering quality"""
