@@ -139,15 +139,15 @@ class PredictiveDispatchService:
         # Convert to minutes
         return time_hours * 60.0
     
-    def _get_base_travel_time_minutes(self, bin_data: Dict) -> float:
-        """Get base travel time to bin in minutes"""
+    def _get_base_travel_time_minutes(self, bin_data: Dict, truck_data: Dict = None) -> float:
+        """Get base travel time to bin in minutes using actual truck speed"""
         # This should integrate with OSRM service for real travel times
-        # For now, using a simple distance-based calculation
+        # For now, using a simple distance-based calculation with actual truck speed
         try:
             # This would be replaced with actual OSRM query in production
             distance_km = bin_data.get('distance_to_depot', 5.0)  # Default 5km
-            base_speed_kmh = 40.0  # Average city speed
-            time_hours = distance_km / base_speed_kmh
+            truck_speed = truck_data.get('speed', 40.0) if truck_data else 40.0  # Use actual truck speed
+            time_hours = distance_km / truck_speed
             return time_hours * 60.0  # Convert to minutes
         except Exception:
             return 20.0  # Default 20 minutes

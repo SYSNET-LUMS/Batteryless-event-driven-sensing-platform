@@ -1,0 +1,152 @@
+{
+  "bins": [
+    {
+      "lat": 33.613580131572526,
+      "lng": 73.05981561266454,
+      "fillLevel": 0,
+      "capacity": 500,
+      "fillRate": 6,
+      "threshold": 80,
+      "id": "BIN_1"
+    },
+    {
+      "lat": 33.5961306627742,
+      "lng": 73.05214924797147,
+      "fillLevel": 20,
+      "capacity": 500,
+      "fillRate": 2.5,
+      "threshold": 80,
+      "id": "BIN_2"
+    },
+    {
+      "lat": 33.61290542424468,
+      "lng": 73.05533679381806,
+      "fillLevel": 20,
+      "capacity": 500,
+      "fillRate": 2.5,
+      "threshold": 80,
+      "id": "BIN_3"
+    },
+    {
+      "lat": 33.61038711360415,
+      "lng": 73.07074910482342,
+      "fillLevel": 10,
+      "capacity": 500,
+      "fillRate": 4.5,
+      "threshold": 80,
+      "id": "BIN_4"
+    },
+    {
+      "lat": 33.61061698525153,
+      "lng": 73.05819831498168,
+      "fillLevel": 10,
+      "capacity": 500,
+      "fillRate": 5.5,
+      "threshold": 80,
+      "id": "BIN_5"
+    },
+    {
+      "lat": 33.59559355288783,
+      "lng": 73.05534235229028,
+      "fillLevel": 20,
+      "capacity": 500,
+      "fillRate": 5,
+      "threshold": 80,
+      "id": "BIN_6"
+    },
+    {
+      "lat": 33.61583584209746,
+      "lng": 73.05573354944447,
+      "fillLevel": 20,
+      "capacity": 500,
+      "fillRate": 3.5,
+      "threshold": 80,
+      "id": "BIN_7"
+    },
+    {
+      "lat": 33.59497305868916,
+      "lng": 73.04797260137586,
+      "fillLevel": 20,
+      "capacity": 500,
+      "fillRate": 3.5,
+      "threshold": 80,
+      "id": "BIN_8"
+    },
+    {
+      "lat": 33.60788991620307,
+      "lng": 73.07258370515711,
+      "fillLevel": 10,
+      "capacity": 500,
+      "fillRate": 2.5,
+      "threshold": 80,
+      "id": "BIN_9"
+    },
+    {
+      "lat": 33.59167589383475,
+      "lng": 73.05369437315996,
+      "fillLevel": 0,
+      "capacity": 500,
+      "fillRate": 8.5,
+      "threshold": 80,
+      "id": "BIN_10"
+    }
+  ],
+  "trucks": [
+    {
+      "lat": 33.60182376607769,
+      "lng": 73.06899477589937,
+      "capacity": 1000,
+      "speed": 50,
+      "currentLoad": 0,
+      "status": "idle",
+      "id": "TRUCK_1"
+    },
+    {
+      "lat": 33.60182376607769,
+      "lng": 73.06899477589937,
+      "capacity": 2000,
+      "speed": 50,
+      "currentLoad": 0,
+      "status": "idle",
+      "id": "TRUCK_2"
+    },
+    {
+      "lat": 33.60182376607769,
+      "lng": 73.06895256042482,
+      "capacity": 1000,
+      "speed": 50,
+      "currentLoad": 0,
+      "status": "idle",
+      "id": "TRUCK_3"
+    },
+    {
+      "lat": 33.60182376607769,
+      "lng": 73.06903843289655,
+      "capacity": 1500,
+      "speed": 50,
+      "currentLoad": 0,
+      "status": "idle",
+      "id": "TRUCK_4"
+    }
+  ],
+  "depots": [
+    {
+      "lat": 33.60182376607769,
+      "lng": 73.06899477589937,
+      "name": "Default Depot",
+      "id": "DEPOT_1"
+    }
+  ],
+  "schedules": [],
+  "id_counters": {
+    "bin": 10,
+    "truck": 4,
+    "depot": 1,
+    "schedule": 0
+  },
+  "metadata": {
+    "saved_at": "2025-09-29T23:32:11.636794",
+    "filename": "cleanify_system_20250929_233211.json",
+    "version": "2.0-simplified"
+  }
+}

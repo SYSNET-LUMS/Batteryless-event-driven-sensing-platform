@@ -1,7 +1,103 @@
 from flask import Blueprint, jsonify, request, current_app
 from config.settings import Config
+import math
 
 bp = Blueprint('simulation', __name__, url_prefix='/api')
+
+def update_truck_simulation_state(truck: dict, time_delta_seconds: float, repo) -> dict:
+    """
+    Update truck position and route progress based on simulation time and truck speed
+    
+    This is the missing piece - trucks actually moving through simulation world!
+    """
+    try:
+        truck_speed_kmh = truck.get('speed', 40.0)  # km/h
+        hours_passed = time_delta_seconds / 3600.0  # Convert seconds to hours
+        distance_traveled_km = truck_speed_kmh * hours_passed  # Distance truck can travel in this time step
+        
+        # Get truck's current route/schedule
+        route_data = truck.get('current_route', {})
+        route_bins = route_data.get('bins', [])
+        
+        if not route_bins:
+            return truck  # No route to follow
+        
+        # Track route progress
+        current_step = truck.get('route_step', 0)
+        distance_to_next = truck.get('distance_to_next', 0.0)  # km remaining to next bin
+        
+        remaining_distance = distance_traveled_km
+        
+        while remaining_distance > 0 and current_step < len(route_bins):
+            if distance_to_next <= remaining_distance:
+                # Truck reaches the next bin
+                remaining_distance -= distance_to_next
+                current_step += 1
+                
+                if current_step < len(route_bins):
+                    # Calculate distance to next bin after this one
+                    current_bin = route_bins[current_step - 1]
+                    next_bin = route_bins[current_step]
+                    distance_to_next = calculate_distance_km(
+                        current_bin.get('lat', 0), current_bin.get('lng', 0),
+                        next_bin.get('lat', 0), next_bin.get('lng', 0)
+                    )
+                    
+                    # Simulate bin collection (add collection time)
+                    collection_time_hours = 5 / 60.0  # 5 minutes
+                    if hours_passed >= collection_time_hours:
+                        # Truck has time to collect this bin
+                        truck['current_load'] = truck.get('current_load', 0) + current_bin.get('current_fill', 0)
+                        print(f"🚛 Truck {truck['id']} collected bin {current_bin['id']}")
+                    else:
+                        # Not enough time in this step, truck is collecting
+                        truck['status'] = 'collecting'
+                        break
+                else:
+                    # Reached end of route - return to depot
+                    truck['status'] = 'returning'
+                    depot = repo.get_depots()[0] if repo.get_depots() else None
+                    if depot and current_step > 0:
+                        last_bin = route_bins[current_step - 1]
+                        distance_to_next = calculate_distance_km(
+                            last_bin.get('lat', 0), last_bin.get('lng', 0),
+                            depot.get('lat', 0), depot.get('lng', 0)
+                        )
+            else:
+                # Truck is still traveling to next bin
+                distance_to_next -= remaining_distance
+                remaining_distance = 0
+                truck['status'] = 'traveling'
+        
+        # Update truck state
+        truck['route_step'] = current_step
+        truck['distance_to_next'] = distance_to_next
+        
+        # If truck completed route and returned to depot
+        if truck['status'] == 'returning' and distance_to_next <= 0:
+            truck['status'] = 'available'
+            truck['current_load'] = 0
+            truck['route_step'] = 0
+            truck['distance_to_next'] = 0
+            truck['current_route'] = {}
+            print(f"✅ Truck {truck['id']} completed route and returned to depot")
+        
+        return truck
+        
+    except Exception as e:
+        print(f"⚠️ Error updating truck simulation state: {e}")
+        return truck
+
+def calculate_distance_km(lat1: float, lng1: float, lat2: float, lng2: float) -> float:
+    """Calculate distance between two points in km (Haversine formula)"""
+    R = 6371  # Earth radius in km
+    dlat = math.radians(lat2 - lat1)
+    dlng = math.radians(lng2 - lng1)
+    a = (math.sin(dlat/2) * math.sin(dlat/2) + 
+         math.cos(math.radians(lat1)) * math.cos(math.radians(lat2)) * 
+         math.sin(dlng/2) * math.sin(dlng/2))
+    c = 2 * math.atan2(math.sqrt(a), math.sqrt(1-a))
+    return R * c
 
 @bp.route('/start_simulation', methods=['POST'])
 def start_simulation():
@@ -121,6 +217,17 @@ def simulation_step():
         
         if agent:
             agent.bins_data = repo.get_bins()
+        
+        # UPDATE TRUCK POSITIONS AND ROUTES BASED ON SIMULATION TIME
+        trucks = repo.get_trucks()
+        for truck in trucks:
+            try:
+                if truck.get('status') in ['traveling', 'on_route', 'collecting']:
+                    truck_updated = update_truck_simulation_state(truck, time_delta, repo)
+                    if truck_updated:
+                        repo.update_truck(truck['id'], truck_updated)
+            except Exception as e:
+                print(f"⌨ Error updating truck {truck.get('id', 'unknown')}: {e}")
         
         # Get traffic info
         traffic_info = {}

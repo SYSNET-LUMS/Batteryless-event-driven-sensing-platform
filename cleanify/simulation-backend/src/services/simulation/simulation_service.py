@@ -288,32 +288,38 @@ class SimulationService:
             print(f"⚠️ Dynamic threshold calculation error: {e}")
             return bin_data.get('threshold', 80)
   
-    def _get_travel_time_to_depot(self, bin_data: Dict, depot_data: Dict) -> float:
-        """Get travel time from bin to depot in hours (cached)"""
-        # Create cache key from coordinates
-        cache_key = f"{bin_data['lat']},{bin_data['lng']}->{depot_data['lat']},{depot_data['lng']}"
+    def _get_travel_time_to_depot(self, bin_data: Dict, depot_data: Dict, truck_data: Dict = None) -> float:
+        """Get travel time from bin to depot in hours (cached) using actual truck speed"""
+        # Create cache key from coordinates and truck speed
+        truck_speed = truck_data.get('speed', 40.0) if truck_data else 40.0  # Use actual truck speed or default
+        cache_key = f"{bin_data['lat']},{bin_data['lng']}->{depot_data['lat']},{depot_data['lng']}-{truck_speed}"
         
         # Return cached value if exists
         if cache_key in self.travel_time_cache:
             return self.travel_time_cache[cache_key]
         
         try:
-            # Try OSRM first (only called once per bin-depot pair)
-            travel_time_min = self.osrm_service.get_travel_time_with_traffic(
+            # Try OSRM first for base route time
+            base_travel_time_min = self.osrm_service.get_travel_time_with_traffic(
                 bin_data['lat'], bin_data['lng'],
                 depot_data['lat'], depot_data['lng'],
                 traffic_multiplier=1.0
             )
-            travel_time_hours = travel_time_min / 60
+            
+            # Apply truck speed factor to OSRM time
+            # OSRM gives time at ~40 km/h average, adjust for actual truck speed
+            osrm_speed = 40.0  # OSRM baseline speed
+            speed_factor = osrm_speed / truck_speed  # Slower trucks take longer
+            travel_time_hours = (base_travel_time_min * speed_factor) / 60
             
         except:
-            # Fallback calculation
+            # Fallback calculation using ACTUAL truck speed
             from utils.distance import calculate_distance_km
             distance_km = calculate_distance_km(
                 bin_data['lat'], bin_data['lng'],
                 depot_data['lat'], depot_data['lng']
             )
-            travel_time_hours = distance_km / 30  # 30 km/h average in city
+            travel_time_hours = distance_km / truck_speed  # Use actual truck speed instead of hardcoded 30
         
         # Cache the result
         self.travel_time_cache[cache_key] = travel_time_hours

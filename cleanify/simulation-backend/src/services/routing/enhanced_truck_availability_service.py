@@ -197,9 +197,9 @@ class EnhancedTruckAvailabilityService:
                 remaining_return = len(return_route) - return_route_index
                 return_time = remaining_return * 2  # Estimate 2 minutes per route segment
             elif depot_data and route:
-                # Estimate return time from current/last bin to depot
+                # Estimate return time from current/last bin to depot using actual truck speed
                 last_bin_pos = route[-1] if route else truck
-                return_time = self._estimate_travel_time(last_bin_pos, depot_data)
+                return_time = self._estimate_travel_time(last_bin_pos, depot_data, truck)
             
             total_time = (remaining_collections * collection_time_per_bin) + return_time
             return max(0, total_time)
@@ -356,17 +356,17 @@ class EnhancedTruckAvailabilityService:
         except Exception:
             return float('inf')
     
-    def _estimate_travel_time(self, from_location: Dict, to_location: Dict) -> float:
-        """Estimate travel time between locations in minutes"""
+    def _estimate_travel_time(self, from_location: Dict, to_location: Dict, truck_data: Dict = None) -> float:
+        """Estimate travel time between locations in minutes using actual truck speed"""
         try:
             distance_km = self._calculate_distance_km(
                 from_location.get('lat', 0), from_location.get('lng', 0),
                 to_location.get('lat', 0), to_location.get('lng', 0)
             )
             
-            # Assume average speed of 40 km/h in city
-            average_speed_kmh = 40
-            time_hours = distance_km / average_speed_kmh
+            # Use actual truck speed instead of hardcoded 40 km/h
+            truck_speed = truck_data.get('speed', 40.0) if truck_data else 40.0
+            time_hours = distance_km / truck_speed
             return time_hours * 60  # Convert to minutes
             
         except Exception:
