@@ -5,6 +5,7 @@ from services.clustering_service import ClusteringService
 from services.external.osrm_service import OSRMService
 from services.external.vroom_service import VROOMService
 from services.routing.optimization_service import OptimizationService
+from services.proactive_cluster_dispatch_service import ProactiveClusterDispatchService
 import logging
 
 logger = logging.getLogger(__name__)
@@ -23,6 +24,9 @@ class WasteCollectionAgent:
         self.decision_service = DecisionService(self.optimization_service, self.vroom_service)
         self.simulation_service = SimulationService(self.osrm_service)
         self.clustering_service = ClusteringService(osrm_service=self.osrm_service)
+        
+        # Initialize proactive cluster dispatch service
+        self.proactive_dispatch = ProactiveClusterDispatchService(self.clustering_service)
         
         # Cache for clusters
         self.cached_clusters = None
@@ -78,11 +82,92 @@ class WasteCollectionAgent:
     
     def collect_bins_from_cluster(self, target_bin: Dict, cluster_bins: List[Dict], 
                                  truck_capacity: float, current_load: float,
-                                 simulation_time: float = None) -> List[Dict]:
+                                 simulation_time: Optional[float] = None) -> List[Dict]:
         """Get optimal bin collection from cluster (still used for individual collections)"""
         return self.decision_service.get_cluster_collection_decision(
-            target_bin, cluster_bins, truck_capacity, current_load, simulation_time
+            target_bin, cluster_bins, truck_capacity, current_load, simulation_time or 0.0
         )
+    
+    def handle_bin_reached_dt_with_cluster_optimization(self, trigger_bin: Dict, 
+                                                       all_bins: List[Dict],
+                                                       all_trucks: List[Dict],
+                                                       current_time: float) -> Dict:
+        """
+        Enhanced bin DT handling with proactive cluster management.
+        
+        This method prevents redundant truck dispatches by:
+        1. Checking if trigger bin's cluster already has an assigned truck
+        2. Adding nearby cluster bins to collection queue proactively  
+        3. Estimating truck capacity to avoid over-dispatching
+        
+        Returns:
+            Dict with dispatch decision and queue updates
+        """
+        try:
+            # Process with proactive cluster dispatch service
+            cluster_decision = self.proactive_dispatch.process_bin_reached_dt(
+                trigger_bin, all_bins, all_trucks, current_time, self.collection_queue
+            )
+            
+            # Update collection queue with additional bins
+            additional_bins = cluster_decision.get('additional_bins_for_queue', [])
+            if additional_bins:
+                # Add new bins to queue (avoid duplicates)
+                existing_queue_set = set(self.collection_queue)
+                new_bins = [bin_id for bin_id in additional_bins if bin_id not in existing_queue_set]
+                self.collection_queue.extend(new_bins)
+                
+                logger.info(f"Added {len(new_bins)} proactive bins to collection queue for cluster containing {trigger_bin['id']}")
+            
+            # Clean up stale assignments
+            self.proactive_dispatch.clear_stale_assignments(current_time)
+            
+            return {
+                'dispatch_recommendation': cluster_decision.get('dispatch_recommendation', 'dispatch'),
+                'assigned_truck_id': cluster_decision.get('assigned_truck_id'),
+                'estimated_capacity_after': cluster_decision.get('estimated_capacity_after'),
+                'proactive_bins_added': len(additional_bins),
+                'reason': cluster_decision.get('reason', 'Standard dispatch'),
+                'updated_queue_size': len(self.collection_queue)
+            }
+            
+        except Exception as e:
+            logger.error(f"Error in enhanced DT handling: {e}")
+            # Fallback to normal dispatch
+            return {
+                'dispatch_recommendation': 'dispatch',
+                'assigned_truck_id': None,
+                'estimated_capacity_after': None,
+                'proactive_bins_added': 0,
+                'reason': f'Fallback dispatch due to error: {e}',
+                'updated_queue_size': len(self.collection_queue)
+            }
+    
+    def update_truck_assignment_status(self, truck_id: str, status: str):
+        """Update truck assignment status for proactive dispatch tracking"""
+        try:
+            self.proactive_dispatch.update_truck_assignments({
+                truck_id: {'status': status}
+            })
+        except Exception as e:
+            logger.warning(f"Error updating truck assignment status: {e}")
+    
+    def get_proactive_dispatch_status(self) -> Dict:
+        """Get status of proactive dispatch system"""
+        try:
+            return {
+                'active_assignments': self.proactive_dispatch.get_active_assignments(),
+                'collection_queue_size': len(self.collection_queue),
+                'proactive_dispatch_enabled': True
+            }
+        except Exception as e:
+            logger.error(f"Error getting proactive dispatch status: {e}")
+            return {
+                'active_assignments': {},
+                'collection_queue_size': len(self.collection_queue),
+                'proactive_dispatch_enabled': False,
+                'error': str(e)
+            }
     
     def get_clusters(self, bins_data: List[Dict]) -> Dict:
         """Get cached clusters or create new ones using enhanced adaptive clustering"""
@@ -121,12 +206,14 @@ class WasteCollectionAgent:
 
     # ------------------ Queue Management ------------------
     def _rebuild_collection_queue(self, current_time: float) -> None:
-        """Build a prioritized queue of bin IDs that should be collected next.
+        """
+        Enhanced queue rebuild with proactive cluster recommendations.
 
         Rules:
         - Exclude bins collected in the last 30 minutes
         - Exclude bins with < 15% fill (fuel saving)
         - Prioritize by: overflow/critical -> above threshold -> urgency score
+        - Include proactive cluster recommendations
         """
         try:
             bins = list(self.bins_data) if self.bins_data else []
@@ -159,16 +246,44 @@ class WasteCollectionAgent:
                 return (overflow_flag, critical_flag, above_threshold, round(urgency, 2), round(fill, 2))
 
             candidates.sort(key=priority_tuple, reverse=True)
-            # Keep a modest queue length to avoid thrashing; adjust as needed
-            self.collection_queue = [b['id'] for b in candidates[:50]]
-        except Exception:
+            
+            # Build initial queue
+            initial_queue = [b['id'] for b in candidates[:50]]
+            
+            # Get proactive cluster recommendations
+            try:
+                proactive_recommendations = self.proactive_dispatch.recommend_collection_queue_updates(
+                    initial_queue, bins, current_time
+                )
+                
+                # Add proactive recommendations
+                proactive_additions = proactive_recommendations.get('additions', [])
+                if proactive_additions:
+                    # Combine and deduplicate
+                    combined_queue = initial_queue + proactive_additions
+                    self.collection_queue = list(dict.fromkeys(combined_queue))  # Preserve order, remove duplicates
+                    
+                    logger.info(f"Added {len(proactive_additions)} proactive bins to queue. "
+                              f"Total queue size: {len(self.collection_queue)}")
+                else:
+                    self.collection_queue = initial_queue
+                    
+            except Exception as e:
+                logger.warning(f"Error getting proactive recommendations, using basic queue: {e}")
+                self.collection_queue = initial_queue
+                
+        except Exception as e:
+            logger.error(f"Error rebuilding collection queue: {e}")
+            # On any error, clear queue to avoid blocking
+            self.collection_queue = []
             # On any error, clear queue to avoid blocking
             self.collection_queue = []
     
     # Simplified delegation methods (VROOM handles assignments)
     def reset_assignments(self):
-        """No longer needed - VROOM handles all assignments optimally"""
-        pass
+        """Reset bin assignments"""
+        self.bin_assignments = {}
+        print("🔄 Reset bin assignments")
     
     def is_bin_assigned(self, bin_id: str) -> bool:
         """VROOM handles assignments - always return False for compatibility"""

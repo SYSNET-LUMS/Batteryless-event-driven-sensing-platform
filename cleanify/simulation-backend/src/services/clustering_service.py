@@ -24,7 +24,7 @@ class ClusteringService:
         self.osrm_service = osrm_service or OSRMService()
         
         # Improved clustering parameters based on analysis
-        self.optimal_distance_threshold = 600  # Meters - optimal for creating logical clusters
+        self.optimal_distance_threshold = 1200  # Meters - optimal for creating logical clusters
         self.default_eps_meters = 600  # Updated default
         self.default_min_samples = 1  # Allow single bins to connect
         self.adaptive_clustering = True

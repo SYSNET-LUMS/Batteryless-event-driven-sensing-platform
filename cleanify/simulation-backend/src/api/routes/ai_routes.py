@@ -33,7 +33,7 @@ def get_ai_decision(decision_type):
         available_bins = [b for b in bins if not agent.is_bin_assigned(b['id'])]
         
         # Filter out reserved trucks (for upcoming scheduled dispatches)
-        schedule_service = current_app.schedule_service
+        schedule_service = getattr(current_app, 'schedule_service', None)
         reserved_trucks = []
         if schedule_service:
             try:
@@ -75,6 +75,64 @@ def get_ai_decision(decision_type):
         print(f"⚠️ AI decision failed for {decision_type}: {e}")
         return jsonify({"status": "error", "message": str(e)}), 500
 
+@bp.route('/bin_reached_dt', methods=['POST'])
+def handle_bin_reached_dt():
+    """Handle bin reaching disposal threshold with proactive cluster optimization"""
+    try:
+        agent = current_app.agent
+        repo = current_app.system_repository
+        
+        if not agent:
+            return jsonify({"status": "error", "message": "Agent not available"}), 400
+        
+        data = request.json or {}
+        trigger_bin_id = data.get('bin_id')
+        current_time = data.get('simulation_time', 0)
+        
+        if not trigger_bin_id:
+            return jsonify({"status": "error", "message": "bin_id required"}), 400
+        
+        # Get system data
+        bins = repo.get_bins()
+        trucks = repo.get_trucks()
+        
+        # Find the trigger bin
+        trigger_bin = next((b for b in bins if b['id'] == trigger_bin_id), None)
+        if not trigger_bin:
+            return jsonify({"status": "error", "message": "Bin not found"}), 404
+        
+        # Process with proactive cluster dispatch
+        result = agent.handle_bin_reached_dt_with_cluster_optimization(
+            trigger_bin, bins, trucks, current_time
+        )
+        
+        return jsonify({
+            "status": "success",
+            "dispatch_decision": result
+        })
+        
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+@bp.route('/proactive_dispatch_status', methods=['GET'])
+def get_proactive_dispatch_status():
+    """Get status of proactive dispatch system"""
+    try:
+        agent = current_app.agent
+        
+        if not agent:
+            return jsonify({"status": "error", "message": "Agent not available"}), 400
+        
+        status = agent.get_proactive_dispatch_status()
+        
+        return jsonify({
+            "status": "success",
+            "proactive_dispatch_status": status
+        })
+        
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
+
 @bp.route('/check_urgent_bins', methods=['POST'])
 def check_urgent_bins():
     """Check urgent bins and get cluster bins for collection"""
@@ -85,7 +143,7 @@ def check_urgent_bins():
         if not agent:
             return jsonify({"status": "error", "message": "Agent not available"}), 400
         
-        data = request.json
+        data = request.json or {}
         truck_id = data.get('truck_id')
         target_bin_id = data.get('target_bin_id')
         current_load = data.get('current_load', 0)
