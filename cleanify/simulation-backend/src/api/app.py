@@ -53,5 +53,8 @@ def create_app(config: Config = None) -> Flask:
     app.register_blueprint(schedule_routes.bp)
     from .routes import batch_sync_routes
     app.register_blueprint(batch_sync_routes.bp)
+    # Traffic / dispatch strategy endpoints
+    from .routes import traffic_routes
+    app.register_blueprint(traffic_routes.bp)
     
     return app

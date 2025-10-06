@@ -6,3 +6,4 @@ requests
 ortools
 openai
 python-dotenv
+pytest

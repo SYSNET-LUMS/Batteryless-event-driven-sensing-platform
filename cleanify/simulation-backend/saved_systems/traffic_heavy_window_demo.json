@@ -1,0 +1,53 @@
+{
+  "meta": {
+    "description": "Demo system to test pre/post heavy traffic dispatch logic",
+    "created": "2025-10-06",
+    "notes": "Use hours 16-19 to see decision: heavy traffic expected 17-18 (pattern), test early dispatch vs waiting."
+  },
+  "depot": {
+    "id": "DEPOT_1",
+    "lat": 31.5000,
+    "lng": 74.3000,
+    "name": "Central Depot"
+  },
+  "trucks": [
+    {
+      "id": "TRUCK_1",
+      "lat": 31.5005,
+      "lng": 74.3005,
+      "capacity": 1200,
+      "currentLoad": 0,
+      "status": "idle",
+      "speed": 50
+    }
+  ],
+  "bins": [
+    {
+      "id": "BIN_1",
+      "lat": 31.5050,
+      "lng": 74.3050,
+      "fillLevel": 88,
+      "capacity": 500,
+      "fillRate": 5.0,
+      "threshold": 80,
+      "dynamic_threshold": 90,
+      "lastCollection": 0
+    },
+    {
+      "id": "BIN_2",
+      "lat": 31.5060,
+      "lng": 74.3060,
+      "fillLevel": 70,
+      "capacity": 500,
+      "fillRate": 4.0,
+      "threshold": 80,
+      "dynamic_threshold": 85,
+      "lastCollection": 0
+    }
+  ],
+  "schedules": [],
+  "simulation": {
+    "start_hour": 7,
+    "current_simulation_seconds": 0
+  }
+}

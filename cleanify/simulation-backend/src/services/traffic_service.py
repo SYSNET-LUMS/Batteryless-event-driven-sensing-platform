@@ -116,22 +116,29 @@ class TrafficManager:
                 'reason': 'EMERGENCY: Bin already overflowing (time calculation)'
             }
         
-        # Enhanced: Try predictive logic first if enabled and bin_id available
+        # Enhanced: Try advanced heavy-traffic window evaluation (before vs after) first
         if use_predictive_logic and bin_id:
+            try:
+                around_heavy = self.find_optimal_dispatch_around_heavy_traffic(
+                    current_time_min, bin_id, base_travel_min, time_to_overflow_min
+                )
+                if around_heavy.get('decision_source') == 'around_heavy_traffic':
+                    return around_heavy
+            except Exception as e:
+                logger.warning(f"Around-heavy traffic evaluation failed for bin {bin_id}: {e}")
+            
+            # Fallback to original predictive pre-heavy logic
             try:
                 predictive_result = self.find_optimal_dispatch_before_heavy_traffic(
                     current_time_min, bin_id, base_travel_min, time_to_overflow_min
                 )
-                
-                # If predictive logic gives a clear recommendation, use it
-                if 'fuel_savings_min' in predictive_result and predictive_result['fuel_savings_min'] > 0:
+                if 'fuel_savings_min' in predictive_result and predictive_result.get('fuel_savings_min', 0) > 0:
                     logger.info(f"Using predictive dispatch for bin {bin_id}: {predictive_result['reason']}")
                     return predictive_result
                 elif predictive_result.get('dispatch') == 'now' and 'overflow' in predictive_result.get('reason', '').lower():
-                    return predictive_result  # Safety override from predictive logic
-                    
+                    return predictive_result
             except Exception as e:
-                logger.warning(f"Predictive dispatch failed for bin {bin_id}, falling back to standard logic: {e}")
+                logger.warning(f"Predictive (pre-heavy) dispatch failed for bin {bin_id}, falling back to standard logic: {e}")
         
         # Standard logic (enhanced with better traffic classification)
         # Get current traffic density
@@ -283,7 +290,7 @@ class TrafficManager:
         else:
             return 'moderate'
     
-    def predict_traffic_transition_times(self, current_time_min: int, bin_id: str = None, 
+    def predict_traffic_transition_times(self, current_time_min: int, bin_id: Optional[str] = None, 
                                        prediction_window_hours: int = 4) -> List[Dict]:
         """
         Predict upcoming traffic level transitions (inspired by abc.py but enhanced)
@@ -325,7 +332,7 @@ class TrafficManager:
         
         return transitions
     
-    def find_next_light_traffic_window(self, current_time_min: int, bin_id: str = None,
+    def find_next_light_traffic_window(self, current_time_min: int, bin_id: Optional[str] = None,
                                      min_duration_min: int = 30) -> Optional[Dict]:
         """
         Find the next sustained light traffic window (enhanced version of abc.py concept)
@@ -463,7 +470,7 @@ class TrafficManager:
                                               current_time_min, bin_id, None, use_predictive_logic=False)
     
     def _calculate_average_density(self, start_time_min: int, duration_min: int, 
-                                 bin_id: str = None) -> float:
+                                 bin_id: Optional[str] = None) -> float:
         """Calculate average traffic density over a time window"""
         total_density = 0.0
         sample_count = 0
@@ -581,29 +588,27 @@ class TrafficManager:
     def _add_traffic_recommendations(self, optimization_result: Dict, current_time_seconds: float) -> Dict:
         """Add traffic-aware recommendations to optimization results"""
         enhanced_result = optimization_result.copy()
-        current_time_min = current_time_seconds // 60
-        
+        current_time_min = int(current_time_seconds // 60)
+
         # Enhance route extensions with traffic timing
         if 'route_extensions' in enhanced_result:
             for extension in enhanced_result['route_extensions']:
                 if extension.get('success', False):
-                    # Add traffic timing advice for extension
                     extension['traffic_advice'] = self._get_traffic_advice_for_route_extension(
                         extension, current_time_min
                     )
-        
+
         # Enhance new routes with traffic timing
         if 'new_routes' in enhanced_result:
             for route in enhanced_result['new_routes']:
                 if route.get('success', False):
-                    # Add optimal dispatch timing based on traffic
                     route['optimal_dispatch_timing'] = self._get_optimal_dispatch_timing(
                         route, current_time_min
                     )
-        
+
         # Add overall traffic strategy recommendations
         enhanced_result['traffic_strategy'] = self._generate_traffic_strategy(current_time_min)
-        
+
         return enhanced_result
     
     def _get_traffic_advice_for_route_extension(self, extension: Dict, current_time_min: int) -> Dict:
@@ -644,9 +649,13 @@ class TrafficManager:
             estimated_duration = route.get('route_metrics', {}).get('estimated_duration_minutes', 60)
             
             # Check if delaying dispatch would be beneficial
-            dispatch_analysis = self.find_optimal_dispatch_before_heavy_traffic(
-                current_time_min, estimated_duration, None  # No specific bin ID for route analysis
-            )
+            # Without a specific bin we cannot use bin-specific heavy traffic logic reliably.
+            # Provide a neutral recommendation (immediate dispatch) here or adapt if route bins available.
+            dispatch_analysis = {
+                'dispatch': 'now',
+                'delay_min': 0,
+                'reason': 'No bin-specific traffic context; dispatch immediately'
+            }
             
             return {
                 'immediate_dispatch_recommended': dispatch_analysis.get('dispatch', 'now') == 'now',
@@ -897,3 +906,147 @@ class TrafficManager:
             # Traffic delay increases non-linearly with density
             delay_factor = (density - 1.0) * 0.3  # 30% delay per density unit above 1.0
             return base_duration_min * delay_factor
+
+    # ---------------- New Advanced Heavy Traffic Window Logic -----------------
+    def find_optimal_dispatch_around_heavy_traffic(self, current_time_min: int, bin_id: str,
+                                                  base_travel_min: float,
+                                                  time_to_overflow_min: float) -> Dict:
+        """
+        Decide whether to dispatch BEFORE upcoming heavy traffic or WAIT until AFTER it
+        while ensuring the bin does not overflow and fuel/time efficiency is optimized.
+
+        Scenario addressed (user example):
+        - Heavy traffic predicted (e.g., 22:30–23:00). Bin may reach threshold/overflow near 23:00.
+        - Option A: Dispatch early to arrive before heavy traffic starts.
+        - Option B: Wait through heavy traffic and dispatch just after if overflow risk is low.
+
+        Returns a dict with keys:
+            dispatch: 'now' or 'wait'
+            delay_min: minutes to wait if 'wait'
+            reason: textual explanation
+            strategy: 'pre_heavy' | 'post_heavy'
+            decision_source: 'around_heavy_traffic'
+            fuel_savings_min: estimated travel time (fuel proxy) savings vs alternative
+        """
+        try:
+            safety_buffer = self.safety_buffer
+            # Gather transitions for next 6 hours
+            transitions = self.predict_traffic_transition_times(current_time_min, bin_id, 6)
+            if not transitions:
+                return {'decision_source': 'around_heavy_traffic', 'dispatch': 'now', 'delay_min': 0, 'reason': 'No transitions found', 'strategy': 'no_data'}
+
+            # Build heavy traffic windows (start -> end)
+            heavy_windows = []
+            current_heavy_start = None
+            for t in transitions:
+                if t['to_level'] == 'heavy' and current_heavy_start is None:
+                    current_heavy_start = t['time_min']
+                elif t['from_level'] == 'heavy' and current_heavy_start is not None:
+                    heavy_windows.append((current_heavy_start, t['time_min']))
+                    current_heavy_start = None
+            # If heavy started but no end transition yet, assume 60 min duration fallback
+            if current_heavy_start is not None:
+                heavy_windows.append((current_heavy_start, current_heavy_start + 60))
+
+            if not heavy_windows:
+                return {'decision_source': 'around_heavy_traffic', 'dispatch': 'now', 'delay_min': 0, 'reason': 'No heavy traffic expected', 'strategy': 'no_heavy'}
+
+            # Pick earliest future heavy window that starts after now
+            future_windows = [w for w in heavy_windows if w[0] > current_time_min]
+            target_window = min(future_windows, key=lambda x: x[0]) if future_windows else None
+            if not target_window:
+                # Heavy might already be happening; evaluate waiting for its end
+                ongoing = [w for w in heavy_windows if w[0] <= current_time_min < w[1]]
+                if not ongoing:
+                    return {'decision_source': 'around_heavy_traffic', 'dispatch': 'now', 'delay_min': 0, 'reason': 'Heavy traffic only in past', 'strategy': 'no_future_heavy'}
+                target_window = ongoing[0]
+            heavy_start, heavy_end = target_window
+
+            # Get densities
+            current_density = self.get_bin_specific_density(bin_id, current_time_min)
+            post_heavy_density = self.get_bin_specific_density(bin_id, heavy_end + 1)
+            pre_heavy_density = self.get_bin_specific_density(bin_id, max(current_time_min, heavy_start - 15))
+
+            travel_now = base_travel_min * current_density
+            travel_post = base_travel_min * post_heavy_density
+            travel_pre = base_travel_min * pre_heavy_density
+
+            # Option A: Dispatch to ARRIVE just before heavy starts (arrival buffer 10 min)
+            arrival_buffer = 10
+            desired_arrival_time = heavy_start - arrival_buffer
+            if desired_arrival_time < current_time_min:
+                # Cannot make pre-heavy arrival; degrade to immediate dispatch evaluation
+                desired_arrival_time = current_time_min
+            dispatch_delay_pre = max(0, desired_arrival_time - current_time_min - travel_pre)
+            total_time_pre = dispatch_delay_pre + travel_pre
+
+            # Option B: Wait until heavy ends then dispatch
+            dispatch_time_post = max(heavy_end, current_time_min)
+            wait_until_post = dispatch_time_post - current_time_min
+            total_time_post = wait_until_post + travel_post
+
+            # Overflow safety evaluation
+            deadline = time_to_overflow_min - safety_buffer
+            feasible_pre = (total_time_pre <= deadline)
+            feasible_post = (total_time_post <= deadline)
+
+            if not feasible_pre and not feasible_post:
+                return {
+                    'decision_source': 'around_heavy_traffic',
+                    'dispatch': 'now',
+                    'delay_min': 0,
+                    'reason': 'Neither pre- nor post-heavy options safe (overflow risk)',
+                    'strategy': 'safety_override'
+                }
+
+            # If only one feasible, choose it
+            if feasible_pre and not feasible_post:
+                return {
+                    'decision_source': 'around_heavy_traffic',
+                    'dispatch': 'wait' if dispatch_delay_pre > 0 else 'now',
+                    'delay_min': int(dispatch_delay_pre),
+                    'reason': f'Dispatch before heavy traffic starting at {int((heavy_start//60)%24):02d}:{int(heavy_start%60):02d} to avoid overflow; post-heavy unsafe',
+                    'strategy': 'pre_heavy',
+                    'fuel_savings_min': round(travel_now - travel_pre, 1)
+                }
+            if feasible_post and not feasible_pre:
+                return {
+                    'decision_source': 'around_heavy_traffic',
+                    'dispatch': 'wait',
+                    'delay_min': int(wait_until_post),
+                    'reason': f'Wait through heavy traffic (ends {int((heavy_end//60)%24):02d}:{int(heavy_end%60):02d}) – safe and pre-heavy arrival not feasible',
+                    'strategy': 'post_heavy',
+                    'fuel_savings_min': round(travel_pre - travel_post, 1)
+                }
+
+            # Both feasible: choose based on cost function
+            wait_penalty_factor = 0.1  # cost per minute of waiting
+            benefit_wait = (travel_pre - travel_post) - (wait_until_post * wait_penalty_factor)
+            if benefit_wait > 0:
+                # Waiting after heavy provides net benefit
+                return {
+                    'decision_source': 'around_heavy_traffic',
+                    'dispatch': 'wait',
+                    'delay_min': int(wait_until_post),
+                    'reason': f'Waiting {int(wait_until_post)}min avoids heavy traffic and yields net savings (~{benefit_wait:.1f} score)',
+                    'strategy': 'post_heavy',
+                    'fuel_savings_min': round(travel_pre - travel_post, 1)
+                }
+            else:
+                return {
+                    'decision_source': 'around_heavy_traffic',
+                    'dispatch': 'wait' if dispatch_delay_pre > 0 else 'now',
+                    'delay_min': int(dispatch_delay_pre),
+                    'reason': f'Dispatching before heavy traffic yields better net efficiency (wait benefit score {benefit_wait:.1f})',
+                    'strategy': 'pre_heavy',
+                    'fuel_savings_min': round(travel_now - travel_pre, 1)
+                }
+        except Exception as e:
+            logger.error(f"Error in around-heavy traffic evaluation: {e}")
+            return {
+                'decision_source': 'around_heavy_traffic',
+                'dispatch': 'now',
+                'delay_min': 0,
+                'reason': f'Fallback due to error: {e}',
+                'strategy': 'error'
+            }
