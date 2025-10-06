@@ -930,7 +930,7 @@ class TrafficManager:
         """
         try:
             safety_buffer = self.safety_buffer
-            # Gather transitions for next 6 hours
+            round_trip_factor = 2.0  # Assume round trip time is 2x one-way (can be tuned)
             transitions = self.predict_traffic_transition_times(current_time_min, bin_id, 6)
             if not transitions:
                 return {'decision_source': 'around_heavy_traffic', 'dispatch': 'now', 'delay_min': 0, 'reason': 'No transitions found', 'strategy': 'no_data'}
@@ -944,25 +944,21 @@ class TrafficManager:
                 elif t['from_level'] == 'heavy' and current_heavy_start is not None:
                     heavy_windows.append((current_heavy_start, t['time_min']))
                     current_heavy_start = None
-            # If heavy started but no end transition yet, assume 60 min duration fallback
             if current_heavy_start is not None:
                 heavy_windows.append((current_heavy_start, current_heavy_start + 60))
 
             if not heavy_windows:
                 return {'decision_source': 'around_heavy_traffic', 'dispatch': 'now', 'delay_min': 0, 'reason': 'No heavy traffic expected', 'strategy': 'no_heavy'}
 
-            # Pick earliest future heavy window that starts after now
             future_windows = [w for w in heavy_windows if w[0] > current_time_min]
             target_window = min(future_windows, key=lambda x: x[0]) if future_windows else None
             if not target_window:
-                # Heavy might already be happening; evaluate waiting for its end
                 ongoing = [w for w in heavy_windows if w[0] <= current_time_min < w[1]]
                 if not ongoing:
                     return {'decision_source': 'around_heavy_traffic', 'dispatch': 'now', 'delay_min': 0, 'reason': 'Heavy traffic only in past', 'strategy': 'no_future_heavy'}
                 target_window = ongoing[0]
             heavy_start, heavy_end = target_window
 
-            # Get densities
             current_density = self.get_bin_specific_density(bin_id, current_time_min)
             post_heavy_density = self.get_bin_specific_density(bin_id, heavy_end + 1)
             pre_heavy_density = self.get_bin_specific_density(bin_id, max(current_time_min, heavy_start - 15))
@@ -971,21 +967,20 @@ class TrafficManager:
             travel_post = base_travel_min * post_heavy_density
             travel_pre = base_travel_min * pre_heavy_density
 
-            # Option A: Dispatch to ARRIVE just before heavy starts (arrival buffer 10 min)
+            # Option A: Dispatch so round trip completes before heavy traffic starts
             arrival_buffer = 10
-            desired_arrival_time = heavy_start - arrival_buffer
-            if desired_arrival_time < current_time_min:
-                # Cannot make pre-heavy arrival; degrade to immediate dispatch evaluation
-                desired_arrival_time = current_time_min
-            dispatch_delay_pre = max(0, desired_arrival_time - current_time_min - travel_pre)
-            total_time_pre = dispatch_delay_pre + travel_pre
+            latest_return_before_heavy = heavy_start - arrival_buffer
+            round_trip_pre = travel_pre * round_trip_factor
+            dispatch_time_pre = latest_return_before_heavy - round_trip_pre
+            dispatch_delay_pre = max(0, dispatch_time_pre - current_time_min)
+            total_time_pre = dispatch_delay_pre + round_trip_pre
 
-            # Option B: Wait until heavy ends then dispatch
+            # Option B: Wait until heavy ends, then dispatch (round trip after heavy)
             dispatch_time_post = max(heavy_end, current_time_min)
             wait_until_post = dispatch_time_post - current_time_min
-            total_time_post = wait_until_post + travel_post
+            round_trip_post = travel_post * round_trip_factor
+            total_time_post = wait_until_post + round_trip_post
 
-            # Overflow safety evaluation
             deadline = time_to_overflow_min - safety_buffer
             feasible_pre = (total_time_pre <= deadline)
             feasible_post = (total_time_post <= deadline)
@@ -999,47 +994,44 @@ class TrafficManager:
                     'strategy': 'safety_override'
                 }
 
-            # If only one feasible, choose it
             if feasible_pre and not feasible_post:
                 return {
                     'decision_source': 'around_heavy_traffic',
                     'dispatch': 'wait' if dispatch_delay_pre > 0 else 'now',
                     'delay_min': int(dispatch_delay_pre),
-                    'reason': f'Dispatch before heavy traffic starting at {int((heavy_start//60)%24):02d}:{int(heavy_start%60):02d} to avoid overflow; post-heavy unsafe',
+                    'reason': f'Dispatch and complete round trip before heavy traffic starts at {int((heavy_start//60)%24):02d}:{int(heavy_start%60):02d}; post-heavy unsafe',
                     'strategy': 'pre_heavy',
-                    'fuel_savings_min': round(travel_now - travel_pre, 1)
+                    'fuel_savings_min': round(travel_now * round_trip_factor - round_trip_pre, 1)
                 }
             if feasible_post and not feasible_pre:
                 return {
                     'decision_source': 'around_heavy_traffic',
                     'dispatch': 'wait',
                     'delay_min': int(wait_until_post),
-                    'reason': f'Wait through heavy traffic (ends {int((heavy_end//60)%24):02d}:{int(heavy_end%60):02d}) – safe and pre-heavy arrival not feasible',
+                    'reason': f'Wait through heavy traffic (ends {int((heavy_end//60)%24):02d}:{int(heavy_end%60):02d}), then dispatch and complete round trip after; pre-heavy unsafe',
                     'strategy': 'post_heavy',
-                    'fuel_savings_min': round(travel_pre - travel_post, 1)
+                    'fuel_savings_min': round(round_trip_pre - round_trip_post, 1)
                 }
 
-            # Both feasible: choose based on cost function
-            wait_penalty_factor = 0.1  # cost per minute of waiting
-            benefit_wait = (travel_pre - travel_post) - (wait_until_post * wait_penalty_factor)
+            wait_penalty_factor = 0.1
+            benefit_wait = (round_trip_pre - round_trip_post) - (wait_until_post * wait_penalty_factor)
             if benefit_wait > 0:
-                # Waiting after heavy provides net benefit
                 return {
                     'decision_source': 'around_heavy_traffic',
                     'dispatch': 'wait',
                     'delay_min': int(wait_until_post),
                     'reason': f'Waiting {int(wait_until_post)}min avoids heavy traffic and yields net savings (~{benefit_wait:.1f} score)',
                     'strategy': 'post_heavy',
-                    'fuel_savings_min': round(travel_pre - travel_post, 1)
+                    'fuel_savings_min': round(round_trip_pre - round_trip_post, 1)
                 }
             else:
                 return {
                     'decision_source': 'around_heavy_traffic',
                     'dispatch': 'wait' if dispatch_delay_pre > 0 else 'now',
                     'delay_min': int(dispatch_delay_pre),
-                    'reason': f'Dispatching before heavy traffic yields better net efficiency (wait benefit score {benefit_wait:.1f})',
+                    'reason': f'Dispatch and complete round trip before heavy traffic yields better net efficiency (wait benefit score {benefit_wait:.1f})',
                     'strategy': 'pre_heavy',
-                    'fuel_savings_min': round(travel_now - travel_pre, 1)
+                    'fuel_savings_min': round(travel_now * round_trip_factor - round_trip_pre, 1)
                 }
         except Exception as e:
             logger.error(f"Error in around-heavy traffic evaluation: {e}")
