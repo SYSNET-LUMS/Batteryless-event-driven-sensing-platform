@@ -1,26 +1,4 @@
 {
-  "meta": {
-    "description": "Demo system to test pre/post heavy traffic dispatch logic",
-    "created": "2025-10-06",
-    "notes": "Use hours 16-19 to see decision: heavy traffic expected 17-18 (pattern), test early dispatch vs waiting."
-  },
-  "depot": {
-    "id": "DEPOT_1",
-    "lat": 31.5000,
-    "lng": 74.3000,
-    "name": "Central Depot"
-  },
-  "trucks": [
-    {
-      "id": "TRUCK_1",
-      "lat": 31.5005,
-      "lng": 74.3005,
-      "capacity": 1200,
-      "currentLoad": 0,
-      "status": "idle",
-      "speed": 50
-    }
-  ],
   "bins": [
     {
       "id": "BIN_1",
@@ -45,9 +23,37 @@
       "lastCollection": 0
     }
   ],
+  "trucks": [
+    {
+      "id": "TRUCK_1",
+      "lat": 31.5005,
+      "lng": 74.3005,
+      "capacity": 1200,
+      "currentLoad": 0,
+      "status": "idle",
+      "speed": 50
+    }
+  ],
+  "depots": [
+    {
+      "id": "DEPOT_1",
+      "lat": 31.5000,
+      "lng": 74.3000,
+      "name": "Central Depot"
+    }
+  ],
   "schedules": [],
-  "simulation": {
-    "start_hour": 7,
-    "current_simulation_seconds": 0
+  "id_counters": {
+    "bin": 2,
+    "truck": 1,
+    "depot": 1,
+    "schedule": 0
+  },
+  "metadata": {
+    "saved_at": "2025-10-06T00:00:00.000000",
+    "filename": "traffic_heavy_window_demo.json",
+    "version": "2.0-simplified",
+    "description": "Demo system to test pre/post heavy traffic dispatch logic",
+    "notes": "Use hours 16-19 to see decision: heavy traffic expected 17-18 (pattern), test early dispatch vs waiting."
   }
 }
