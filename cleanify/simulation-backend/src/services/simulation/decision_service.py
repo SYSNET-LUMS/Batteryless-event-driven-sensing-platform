@@ -62,7 +62,6 @@ class DecisionService:
             return routes
         
         # Fallback to dynamic optimization when no collection queue filtering
-        print("🔄 Using dynamic route optimization (no collection queue filter)")
         try:
             dynamic_result = self.dynamic_route_optimizer.optimize_routes_with_dynamic_availability(
                 trucks_data, bins_data, schedules, depot_data or {}, current_time

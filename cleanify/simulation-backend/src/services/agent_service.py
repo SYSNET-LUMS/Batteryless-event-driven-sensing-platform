@@ -396,7 +396,6 @@ class WasteCollectionAgent:
     def reset_assignments(self):
         """Reset bin assignments"""
         self.bin_assignments = {}
-        print("🔄 Reset bin assignments")
     
     def is_bin_assigned(self, bin_id: str) -> bool:
         """VROOM handles assignments - always return False for compatibility"""
