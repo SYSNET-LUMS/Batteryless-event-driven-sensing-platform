@@ -60,7 +60,12 @@ class DynamicRouteOptimizer:
                 return {
                     'success': True,
                     'message': 'No bins require collection at this time',
-                    'optimization_result': None,
+                    'optimization_result': {
+                        'route_extensions': [],
+                        'new_routes': [],
+                        'critical_overrides': [],
+                        'deferred_collections': []
+                    },
                     'availability_analysis': availability_result
                 }
             
@@ -68,6 +73,14 @@ class DynamicRouteOptimizer:
             optimal_assignments = self.availability_service.get_optimal_truck_assignments(
                 availability_result, bins_needing_collection, depot_data
             )
+            
+            if not optimal_assignments:
+                optimal_assignments = {
+                    'route_extensions': [],
+                    'new_dispatches': [],
+                    'critical_overrides': [],
+                    'deferred_collections': []
+                }
             
             # Step 4: Process route extensions (highest priority)
             route_extension_results = self._process_route_extensions(
@@ -328,7 +341,10 @@ class DynamicRouteOptimizer:
                 vroom_problem['jobs'].append(job)
             
             # Solve with VROOM
-            vroom_result = self.vroom_service.solve_vroom_problem(vroom_problem)
+            trucks_list = [truck_data]
+            vroom_result = self.vroom_service.optimize_vehicle_routes(
+                trucks_list, all_bins, depot_data
+            )
             
             if vroom_result.get('success', False) and 'routes' in vroom_result:
                 route_data = vroom_result['routes'][0]
@@ -567,7 +583,11 @@ class DynamicRouteOptimizer:
                 vroom_problem['jobs'].append(job)
             
             # Solve optimization
-            vroom_result = self.vroom_service.solve_vroom_problem(vroom_problem)
+            truck_list = [d['truck'] for d in new_dispatches]
+            bin_list = [d for d in bins_data if d['id'] in [b['id'] for dispatch in new_dispatches for b in dispatch['bins']]]
+            vroom_result = self.vroom_service.optimize_vehicle_routes(
+                truck_list, bin_list, depot_data
+            )
             
             if vroom_result.get('success', False):
                 return self._process_vroom_routes_result(vroom_result, new_dispatches, current_time_seconds)

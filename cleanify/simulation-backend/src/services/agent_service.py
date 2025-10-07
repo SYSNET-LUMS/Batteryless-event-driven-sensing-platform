@@ -1,7 +1,7 @@
 from typing import Dict, List, Optional, Any
 from services.simulation.decision_service import DecisionService
 from services.simulation.simulation_service import SimulationService
-from services.clustering_service import ClusteringService
+from services.fixed_clustering_service import FixedClusteringService
 from services.external.osrm_service import OSRMService
 from services.external.vroom_service import VROOMService
 from services.routing.optimization_service import OptimizationService
@@ -11,7 +11,7 @@ import logging
 logger = logging.getLogger(__name__)
 
 class WasteCollectionAgent:
-    """Main coordination layer with VROOM-powered optimization and enhanced clustering"""
+    """Main coordination layer with VROOM-powered optimization and fixed geographical clustering"""
     
     def __init__(self, api_key: Optional[str] = None):
         self.api_key = api_key
@@ -23,7 +23,7 @@ class WasteCollectionAgent:
         self.optimization_service = OptimizationService(self.vroom_service)
         self.decision_service = DecisionService(self.optimization_service, self.vroom_service)
         self.simulation_service = SimulationService(self.osrm_service)
-        self.clustering_service = ClusteringService(osrm_service=self.osrm_service)
+        self.clustering_service = FixedClusteringService(osrm_service=self.osrm_service)
         
         # Initialize proactive cluster dispatch service
         self.proactive_dispatch = ProactiveClusterDispatchService(self.clustering_service)
@@ -57,6 +57,10 @@ class WasteCollectionAgent:
             routing_result = self.decision_service.get_routing_decision(
                 {**data, "preferred_bin_ids": filtered_bin_ids}, current_time
             )
+            
+            # Ensure all dispatched bins are properly tracked in collection queue
+            self._ensure_dispatched_bins_in_queue(routing_result)
+            
             return routing_result
         else:
             return {"error": f"Decision type not supported: {decision_type}"}
@@ -205,6 +209,85 @@ class WasteCollectionAgent:
         return updated_bins[0].get('dynamic_threshold', bin_data.get('threshold', 80))
 
     # ------------------ Queue Management ------------------
+    def _process_route_extensions(self, routing_result: List[Dict], current_time: float):
+        """Process route extension results and add nearby bins to collection queue"""
+        try:
+            for route in routing_result:
+                # Check if this route has extension information
+                if 'route_extensions' in route or 'nearby_bins' in route:
+                    additional_bins = []
+                    
+                    # Extract additional bins from route extensions
+                    if 'route_extensions' in route:
+                        for extension in route['route_extensions']:
+                            if extension.get('success') and 'additional_bins' in extension:
+                                additional_bins.extend(extension['additional_bins'])
+                    
+                    # Extract nearby bins directly
+                    if 'nearby_bins' in route:
+                        nearby_bin_ids = [b.get('id') for b in route['nearby_bins'] if b.get('id')]
+                        additional_bins.extend(nearby_bin_ids)
+                    
+                    # Add additional bins to collection queue
+                    if additional_bins:
+                        existing_queue_set = set(self.collection_queue)
+                        new_bins = [bin_id for bin_id in additional_bins if bin_id not in existing_queue_set]
+                        if new_bins:
+                            self.collection_queue.extend(new_bins)
+                            logger.info(f"Added {len(new_bins)} nearby bins from route extensions to collection queue: {new_bins}")
+                            
+                            # Mark these bins as assigned to prevent duplicate dispatch
+                            for bin_id in new_bins:
+                                self.mark_bin_assigned(bin_id)
+                    
+        except Exception as e:
+            logger.warning(f"Error processing route extensions: {e}")
+
+    def _ensure_dispatched_bins_in_queue(self, routing_result: List[Dict]):
+        """
+        Ensure all bins being dispatched are properly tracked in collection queue.
+        This maintains consistency between what trucks are sent to collect and what's in the queue.
+        """
+        try:
+            dispatched_bins = set()
+            
+            # Extract all bins from routing results
+            for route in routing_result:
+                route_bins = route.get('route', [])
+                if route_bins:
+                    dispatched_bins.update(route_bins)
+                    
+                # Also check route extensions
+                if 'route_extensions' in route:
+                    for extension in route['route_extensions']:
+                        if extension.get('success') and 'additional_bins' in extension:
+                            dispatched_bins.update(extension['additional_bins'])
+                
+                # Check nearby bins
+                if 'nearby_bins' in route:
+                    nearby_bin_ids = [b.get('id') for b in route['nearby_bins'] if b.get('id')]
+                    dispatched_bins.update(nearby_bin_ids)
+            
+            # Add any dispatched bins that aren't in collection queue
+            existing_queue_set = set(self.collection_queue)
+            missing_bins = dispatched_bins - existing_queue_set
+            
+            if missing_bins:
+                self.collection_queue.extend(list(missing_bins))
+                logger.info(f"Added {len(missing_bins)} dispatched bins to collection queue: {list(missing_bins)}")
+                
+                # Mark these bins as assigned
+                for bin_id in missing_bins:
+                    self.mark_bin_assigned(bin_id)
+            
+            # Log for debugging
+            if dispatched_bins:
+                logger.info(f"🚛 Dispatching trucks to {len(dispatched_bins)} bins: {list(dispatched_bins)}")
+                logger.info(f"📦 Collection queue now has {len(self.collection_queue)} bins")
+                
+        except Exception as e:
+            logger.warning(f"Error ensuring dispatched bins in queue: {e}")
+
     def _rebuild_collection_queue(self, current_time: float) -> None:
         """
         Enhanced queue rebuild with proactive cluster recommendations.

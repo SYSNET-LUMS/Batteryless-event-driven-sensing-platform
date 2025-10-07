@@ -1,5 +1,6 @@
 from typing import Dict, List, Any, Optional
 from services.routing.optimization_service import OptimizationService
+from services.routing.dynamic_route_optimizer import DynamicRouteOptimizer
 from services.external.vroom_service import VROOMService
 
 class DecisionService:
@@ -9,46 +10,140 @@ class DecisionService:
                  vroom_service: VROOMService = None):
         self.vroom_service = vroom_service or VROOMService()
         self.optimization_service = optimization_service or OptimizationService(self.vroom_service)
+        self.dynamic_route_optimizer = DynamicRouteOptimizer(self.vroom_service)
         
         # Note: No more manual assignment tracking - VROOM handles this
     
-    def get_routing_decision(self, data: Dict, current_time: float = None) -> List[Dict]:
+    def get_routing_decision(self, data: Dict, current_time: float = 0.0) -> List[Dict]:
         """
-        Main routing decision using VROOM + Knapsack + Clustering workflow
+        Main routing decision using collection queue priorities
         
-        New workflow:
-        1. Get clusters (DBSCAN)
-        2. Select bins using knapsack (capacity optimization)
-        3. Use VROOM for vehicle routing (travel optimization)
+        Workflow:
+        1. If preferred_bin_ids (filtered collection queue) is provided, use basic optimization
+           to respect the collection queue and traffic dispatch decisions
+        2. Otherwise, use dynamic route optimizer for enhanced routing with extensions
         """
         bins_data = data.get('bins_data', [])
         trucks_data = data.get('trucks_data', [])
         depot_data = data.get('depots_data', [{}])[0] if data.get('depots_data') else None
+        schedules = data.get('schedules', [])
+        preferred_bin_ids = data.get('preferred_bin_ids')
         
         if not bins_data or not trucks_data:
             return []
         
-        # Get clusters for the workflow
-        clusters = self._get_clusters(bins_data)
+        # Respect collection queue when provided (fuel efficiency + overflow prevention)
+        if preferred_bin_ids:
+            print(f"🎯 Using collection queue priority routing: {len(preferred_bin_ids)} bins")
+            
+            # Filter bins to only those in the collection queue
+            filtered_bins = [b for b in bins_data if b.get('id') in preferred_bin_ids]
+            
+            if not filtered_bins:
+                print("⚠️ No bins in collection queue need immediate dispatch")
+                return []
+            
+            # Use basic optimization that respects preferred_bin_ids
+            clusters = self._get_clusters(filtered_bins)
+            if not clusters:
+                clusters = {i: [bin_data] for i, bin_data in enumerate(filtered_bins)}
+            
+            optimization_result = self.optimization_service.optimize_truck_routes_with_vroom(
+                trucks_data, clusters, depot_data, current_time, preferred_bin_ids
+            )
+            
+            routes = optimization_result.get('routes', [])
+            
+            # Add collection queue context to routes
+            for route in routes:
+                route['collection_source'] = 'priority_queue'
+                route['reason'] = f"Collection queue dispatch: {route.get('reason', 'Optimized route')}"
+            
+            return routes
         
+        # Fallback to dynamic optimization when no collection queue filtering
+        print("🔄 Using dynamic route optimization (no collection queue filter)")
+        try:
+            dynamic_result = self.dynamic_route_optimizer.optimize_routes_with_dynamic_availability(
+                trucks_data, bins_data, schedules, depot_data or {}, current_time
+            )
+            
+            if dynamic_result and dynamic_result.get('success'):
+                optimization_result = dynamic_result.get('optimization_result')
+                if not optimization_result:
+                    raise ValueError("Optimization result is None")
+                    
+                routes = []
+                
+                # Process route extensions (nearby bins collected during return)
+                for extension in optimization_result.get('route_extensions', []):
+                    if extension.get('success'):
+                        route = {
+                            'truck_id': extension['truck_id'],
+                            'route': extension.get('extended_route', []),
+                            'dispatch': 'now',
+                            'delay_min': 0,
+                            'reason': f"Route extended with {len(extension.get('additional_bins', []))} nearby bins",
+                            'route_extensions': [extension],  # Include extension data for agent processing
+                            'extension_type': extension.get('extension_type', 'route_extension'),
+                            'collection_source': 'dynamic_optimization'
+                        }
+                        routes.append(route)
+                
+                # Process new routes  
+                for new_route in optimization_result.get('new_routes', []):
+                    if new_route.get('success'):
+                        route = {
+                            'truck_id': new_route['truck_id'],
+                            'route': new_route.get('optimized_route', []),
+                            'dispatch': 'now',
+                            'delay_min': 0,
+                            'reason': f"New optimized route with {len(new_route.get('optimized_route', []))} bins",
+                            'collection_source': 'dynamic_optimization'
+                        }
+                        routes.append(route)
+                
+                # Process critical overrides
+                for override in optimization_result.get('critical_overrides', []):
+                    if override.get('success'):
+                        route = {
+                            'truck_id': override['truck_id'],
+                            'route': override.get('assigned_bins', []),
+                            'dispatch': 'now',
+                            'delay_min': 0,
+                            'reason': f"Critical override: {override.get('reason', 'Emergency dispatch')}",
+                            'collection_source': 'critical_override'
+                        }
+                        routes.append(route)
+                
+                return routes
+                
+        except Exception as e:
+            print(f"⚠️ Dynamic optimization failed: {e}, falling back to basic routing")
+        
+        # Final fallback to basic optimization
+        clusters = self._get_clusters(bins_data)
         if not clusters:
             clusters = {i: [bin_data] for i, bin_data in enumerate(bins_data)}
         
-        # Use VROOM + Knapsack optimization
         optimization_result = self.optimization_service.optimize_truck_routes_with_vroom(
-            trucks_data, clusters, depot_data, current_time,
-            preferred_bin_ids=data.get('preferred_bin_ids')
+            trucks_data, clusters, depot_data, current_time, preferred_bin_ids
         )
         
         routes = optimization_result.get('routes', [])
-  
+        
+        # Add fallback context to routes
+        for route in routes:
+            route['collection_source'] = 'fallback_basic'
+            route['reason'] = f"Fallback routing: {route.get('reason', 'Basic optimization')}"
+        
         return routes
     
     def get_cluster_collection_decision(self, target_bin: Dict, cluster_bins: List[Dict],
                                      truck_capacity: float, current_load: float,
-                                     simulation_time: float = None,
-                                     all_bins: List[Dict] = None,
-                                     collection_queue: List[str] = None) -> List[Dict]:
+                                     simulation_time: float = 0.0,
+                                     all_bins: Optional[List[Dict]] = None,
+                                     collection_queue: Optional[List[str]] = None) -> List[Dict]:
         """
         Get optimal bin collection from cluster using knapsack
         (This method still used for individual truck's cluster collection)
