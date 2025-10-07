@@ -66,7 +66,7 @@ class ComprehensiveSystemTester:
         
         try:
             # Test 1: Basic clustering
-            clusters = self.clustering_service.create_adaptive_clusters(self.bins)
+            clusters = self.clustering_service.create_simple_dynamic_clusters(self.bins)
             
             if clusters:
                 self.test_results['clustering']['passed'] += 1
@@ -320,7 +320,7 @@ class ComprehensiveSystemTester:
             
             if urgent_bins:
                 # Step 1: Clustering
-                clusters = self.clustering_service.create_adaptive_clusters(urgent_bins)
+                clusters = self.clustering_service.create_simple_dynamic_clusters(urgent_bins)
                 
                 # Step 2: Truck availability
                 available_trucks = self.availability_service.get_available_trucks_enhanced(

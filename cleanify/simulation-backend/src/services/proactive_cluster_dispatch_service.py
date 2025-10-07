@@ -16,7 +16,7 @@ class ProactiveClusterDispatchService:
     4. Only dispatch additional trucks if remaining capacity is insufficient
     """
     
-    def __init__(self, clustering_service: ClusteringService = None):
+    def __init__(self, clustering_service: Optional[ClusteringService] = None):
         self.clustering_service = clustering_service or ClusteringService()
         
         # Parameters for proactive cluster management

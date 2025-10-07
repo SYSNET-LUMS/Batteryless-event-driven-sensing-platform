@@ -1,7 +1,7 @@
 from typing import Dict, List, Optional, Any
 from services.simulation.decision_service import DecisionService
 from services.simulation.simulation_service import SimulationService
-from services.fixed_clustering_service import FixedClusteringService
+from services.clustering_service import ClusteringService
 from services.external.osrm_service import OSRMService
 from services.external.vroom_service import VROOMService
 from services.routing.optimization_service import OptimizationService
@@ -11,7 +11,7 @@ import logging
 logger = logging.getLogger(__name__)
 
 class WasteCollectionAgent:
-    """Main coordination layer with VROOM-powered optimization and fixed geographical clustering"""
+    """Main coordination layer with VROOM-powered optimization and simple dynamic clustering"""
     
     def __init__(self, api_key: Optional[str] = None):
         self.api_key = api_key
@@ -23,7 +23,7 @@ class WasteCollectionAgent:
         self.optimization_service = OptimizationService(self.vroom_service)
         self.decision_service = DecisionService(self.optimization_service, self.vroom_service)
         self.simulation_service = SimulationService(self.osrm_service)
-        self.clustering_service = FixedClusteringService(osrm_service=self.osrm_service)
+        self.clustering_service = ClusteringService(osrm_service=self.osrm_service)
         
         # Initialize proactive cluster dispatch service
         self.proactive_dispatch = ProactiveClusterDispatchService(self.clustering_service)
@@ -66,17 +66,37 @@ class WasteCollectionAgent:
             return {"error": f"Decision type not supported: {decision_type}"}
     
     def get_optimization_status(self) -> Dict:
-        """Get current optimization system status"""
-        return {
+        """Get current optimization system status including clustering information"""
+        status = {
             "vroom_available": self.vroom_service.is_service_available(),
             "osrm_available": self.osrm_service.is_service_available(),
             "optimization_stack": [
-                "DBSCAN Clustering",
+                "Simple Dynamic Clustering",
                 "Knapsack Algorithm", 
                 "VROOM Routing" if self.vroom_service.is_service_available() else "Fallback Assignment"
             ],
             "assignment_method": "VROOM (no manual tracking)"
         }
+        
+        # Add clustering information if bins data is available
+        if self.bins_data:
+            try:
+                # Get depot data if available
+                depot_data = None
+                # Try to get depot from system data (this could be enhanced)
+                
+                clustering_info = self.clustering_service.get_clustering_info(self.bins_data, depot_data)
+                status["clustering_info"] = {
+                    "approach": clustering_info['approach'],
+                    "dynamic_threshold_m": clustering_info['dynamic_threshold_m'],
+                    "depot_distance_percentage": clustering_info['depot_distance_percentage'],
+                    "threshold_bounds": f"{clustering_info['min_threshold_m']}-{clustering_info['max_threshold_m']}m",
+                    "has_depot_data": clustering_info['has_depot_data']
+                }
+            except Exception as e:
+                logger.warning(f"Could not get clustering analysis: {e}")
+        
+        return status
     
     def calculate_urgency_score(self, bin_data: Dict, nearest_truck_data: Optional[Dict] = None, 
                                context: Optional[Dict] = None) -> Dict:
@@ -173,13 +193,23 @@ class WasteCollectionAgent:
                 'error': str(e)
             }
     
-    def get_clusters(self, bins_data: List[Dict]) -> Dict:
+    def get_clusters(self, bins_data: List[Dict], depot_data: Optional[List[Dict]] = None) -> Dict:
         """Get cached clusters or create new ones using enhanced adaptive clustering"""
         if (self.cached_clusters is None or 
             len(bins_data) != self.cached_bin_count):
             
             # Use adaptive clustering for better results
-            self.cached_clusters = self.clustering_service.create_adaptive_clusters(bins_data)
+            # Use depot data from parameter or fallback to bins_data attribute
+            depots = depot_data or getattr(self, 'depot_data', None)
+            
+            # Extract first depot if we have a list
+            depot = None
+            if depots and isinstance(depots, list) and len(depots) > 0:
+                depot = depots[0]
+            elif depots and isinstance(depots, dict):
+                depot = depots
+            
+            self.cached_clusters = self.clustering_service.create_simple_dynamic_clusters(bins_data, depot)
             self.cached_bin_count = len(bins_data)
             
             # Log clustering results

@@ -79,7 +79,7 @@ class StreamlinedSystemTester:
         
         try:
             # Test basic clustering
-            clusters = self.clustering_service.create_adaptive_clusters(self.bins)
+            clusters = self.clustering_service.create_simple_dynamic_clusters(self.bins)
             
             if clusters and len(clusters) > 0:
                 self.test_results['passed'] += 1
