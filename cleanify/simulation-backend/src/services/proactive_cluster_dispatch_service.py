@@ -1,5 +1,5 @@
 import logging
-from typing import Dict, List, Set, Optional, Tuple
+from typing import Dict, List, Set, Optional, Tuple, Callable
 from services.clustering_service import ClusteringService
 from utils.distance import calculate_distance_km
 
@@ -16,8 +16,10 @@ class ProactiveClusterDispatchService:
     4. Only dispatch additional trucks if remaining capacity is insufficient
     """
     
-    def __init__(self, clustering_service: Optional[ClusteringService] = None):
+    def __init__(self, clustering_service: Optional[ClusteringService] = None, 
+                 clustering_callback: Optional[Callable] = None):
         self.clustering_service = clustering_service or ClusteringService()
+        self.clustering_callback = clustering_callback  # Preferred: use agent's cached clustering
         
         # Parameters for proactive cluster management
         self.cluster_radius_km = 0.6  # Match clustering distance threshold
@@ -43,8 +45,13 @@ class ProactiveClusterDispatchService:
             - reason: Explanation of decision
         """
         try:
-            # Get clusters
-            clusters = self.clustering_service.create_adaptive_clusters(all_bins)
+            # Get clusters using cached clustering if available
+            if self.clustering_callback:
+                print("📌 ProactiveDispatch: Using cached clustering from agent")
+                clusters = self.clustering_callback(all_bins)
+            else:
+                print("📌 ProactiveDispatch: Using direct clustering service")
+                clusters = self.clustering_service.create_adaptive_clusters(all_bins)
             
             # Find which cluster the trigger bin belongs to
             trigger_cluster_id, trigger_cluster_bins = self._find_bin_cluster(
@@ -366,8 +373,13 @@ class ProactiveClusterDispatchService:
             if not current_queue:
                 return {'additions': [], 'reason': 'No bins in queue'}
             
-            # Get clusters
-            clusters = self.clustering_service.create_adaptive_clusters(all_bins)
+            # Get clusters using cached clustering if available
+            if self.clustering_callback:
+                print("📌 ProactiveDispatch: Using cached clustering from agent (expand)")
+                clusters = self.clustering_callback(all_bins)
+            else:
+                print("📌 ProactiveDispatch: Using direct clustering service (expand)")
+                clusters = self.clustering_service.create_adaptive_clusters(all_bins)
             
             # Find clusters that have bins in the queue
             affected_clusters = set()

@@ -1,4 +1,6 @@
 from flask import Blueprint, jsonify, request, current_app
+from typing import Any, cast
+from services.agent_manager import get_agent
 
 bp = Blueprint('files', __name__, url_prefix='/api')
 
@@ -7,9 +9,10 @@ def save_system():
     """Save current system state"""
     try:
         # Always get latest state from repository, not just request
-        repo = current_app.system_repository
+        app = cast(Any, current_app)
+        repo = app.system_repository
         system_state = repo.get_state()
-        result = current_app.file_service.save_system(system_state)
+        result = app.file_service.save_system(system_state)
         print(f"System saved to: {result['filepath']}")
         return jsonify(result)
     except Exception as e:
@@ -20,15 +23,24 @@ def save_system():
 def load_system(filename):
     """Load system state from file"""
     try:
-        system_state = current_app.file_service.load_system(filename)
+        app = cast(Any, current_app)
+        system_state = app.file_service.load_system(filename)
         if system_state is None:
             return jsonify({
                 'status': 'error',
                 'message': f'File not found: {filename}'
             }), 404
         # Restore system state in repository
-        repo = current_app.system_repository
+        repo = app.system_repository
         repo.set_state(system_state)
+        
+        # Update singleton agent with latest state and invalidate cluster cache
+        agent = get_agent()
+        agent.bins_data = repo.get_bins()
+        agent.depot_data = repo.get_depots()
+        agent.invalidate_cluster_cache()
+        print(f"🔄 Updated agent state and invalidated cluster cache due to system load (agent_id={id(agent)})")
+        
         print(f"System loaded from: {filename}")
         return jsonify({
             'status': 'success',
@@ -44,7 +56,8 @@ def load_system(filename):
 def get_saved_files():
     """Get list of saved files"""
     try:
-        files = current_app.file_service.get_saved_files()
+        app = cast(Any, current_app)
+        files = app.file_service.get_saved_files()
         return jsonify({
             'status': 'success',
             'files': files

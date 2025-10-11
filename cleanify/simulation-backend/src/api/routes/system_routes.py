@@ -1,4 +1,5 @@
 from flask import Blueprint, jsonify, request, current_app
+from services.agent_manager import get_agent
 
 bp = Blueprint('system', __name__, url_prefix='/api')
 
@@ -8,7 +9,7 @@ def health_check():
     return jsonify({
         "status": "success",
         "message": "Simplified backend running",
-        "agent_ready": current_app.agent is not None,
+        "agent_ready": get_agent() is not None,
         "version": "2.0-simplified"
     })
 
@@ -17,7 +18,7 @@ def initialize_system():
     """Initialize the waste collection system"""
     try:
         current_app.system_repository.clear_all()
-        current_app.agent = None
+        # No need to reset singleton agent here; use AgentManager.reset_agent() if needed
         warning_msg = "System initialized. WARNING: All schedules and system state have been cleared. Do not call this after loading a system file if you want to keep schedules."
         return jsonify({"status": "success", "message": warning_msg})
     except Exception as e:

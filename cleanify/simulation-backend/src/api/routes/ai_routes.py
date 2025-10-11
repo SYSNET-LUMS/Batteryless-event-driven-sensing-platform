@@ -1,12 +1,13 @@
 from flask import Blueprint, jsonify, request, current_app
 
 bp = Blueprint('ai', __name__, url_prefix='/api')
+from services.agent_manager import get_agent
 
 @bp.route('/ai_decision/<decision_type>', methods=['POST'])
 def get_ai_decision(decision_type):
     """AI decision with coordination support"""
     try:
-        agent = current_app.agent
+        agent = get_agent()
         repo = current_app.system_repository
         
         if not agent:
@@ -79,7 +80,7 @@ def get_ai_decision(decision_type):
 def handle_bin_reached_dt():
     """Handle bin reaching disposal threshold with proactive cluster optimization"""
     try:
-        agent = current_app.agent
+        agent = get_agent()
         repo = current_app.system_repository
         
         if not agent:
@@ -118,7 +119,7 @@ def handle_bin_reached_dt():
 def get_proactive_dispatch_status():
     """Get status of proactive dispatch system"""
     try:
-        agent = current_app.agent
+        agent = get_agent()
         
         if not agent:
             return jsonify({"status": "error", "message": "Agent not available"}), 400
@@ -137,7 +138,7 @@ def get_proactive_dispatch_status():
 def check_urgent_bins():
     """Check urgent bins and get cluster bins for collection"""
     try:
-        agent = current_app.agent
+        agent = get_agent()
         repo = current_app.system_repository
         
         if not agent:

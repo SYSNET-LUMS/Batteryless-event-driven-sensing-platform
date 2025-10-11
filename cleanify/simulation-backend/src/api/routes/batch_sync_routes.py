@@ -1,6 +1,8 @@
 
 from flask import Blueprint, request, jsonify, current_app
+from typing import Any, cast
 from config.constants import ITEM_CONFIGS
+from services.agent_manager import get_agent
 
 bp = Blueprint('batch_sync', __name__, url_prefix='/api')
 
@@ -20,8 +22,11 @@ def validate_and_apply_defaults(item_type, item):
 def batch_sync():
     """Batch sync bins, trucks, and depots in one request. Schedules are not touched."""
     try:
-        repo = current_app.system_repository
+        app = cast(Any, current_app)
+        repo = app.system_repository
         data = request.json
+        if not isinstance(data, dict):
+            return jsonify({'status': 'error', 'message': 'Invalid or missing JSON body'}), 400
         # Clear only bins, trucks, depots
         repo._bins.clear()
         repo._trucks.clear()
@@ -52,11 +57,12 @@ def batch_sync():
             depot_data['id'] = f"DEPOT_{i}"
             repo._depots.append(depot_data)
         repo._id_counters['depot'] = len(depots)
-        # Ensure agent is initialized if depots exist
-        if repo.get_depots() and getattr(current_app, 'agent', None) is None:
-            from services import WasteCollectionAgent
-            current_app.agent = WasteCollectionAgent()
-            current_app.agent.bins_data = repo.get_bins()
+        # Ensure agent reflects latest state and invalidate clustering cache
+        agent = get_agent()
+        agent.bins_data = repo.get_bins()
+        agent.depot_data = repo.get_depots()
+        agent.invalidate_cluster_cache()
+        print(f"✅ Using singleton agent in batch_sync_routes - updated state & invalidated cache (agent_id={id(agent)})")
         return jsonify({'status': 'success'})
     except Exception as e:
         return jsonify({'status': 'error', 'message': str(e)}), 500

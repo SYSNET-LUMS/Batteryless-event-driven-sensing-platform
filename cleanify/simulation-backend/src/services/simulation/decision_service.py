@@ -1,16 +1,19 @@
-from typing import Dict, List, Any, Optional
+from typing import Dict, List, Any, Optional, Callable
 from services.routing.optimization_service import OptimizationService
 from services.routing.dynamic_route_optimizer import DynamicRouteOptimizer
 from services.external.vroom_service import VROOMService
+from services.clustering_service import ClusteringService
 
 class DecisionService:
     """AI decision making service using VROOM for optimal routing"""
     
-    def __init__(self, optimization_service: OptimizationService = None, 
-                 vroom_service: VROOMService = None):
+    def __init__(self, optimization_service: Optional[OptimizationService] = None, 
+                 vroom_service: Optional[VROOMService] = None, 
+                 clustering_callback: Optional[Callable] = None):
         self.vroom_service = vroom_service or VROOMService()
         self.optimization_service = optimization_service or OptimizationService(self.vroom_service)
         self.dynamic_route_optimizer = DynamicRouteOptimizer(self.vroom_service)
+        self.clustering_callback = clustering_callback  # Function to get cached clusters
         
         # Note: No more manual assignment tracking - VROOM handles this
     
@@ -266,45 +269,19 @@ class DecisionService:
     
     def _get_clusters(self, bins_data: List[Dict]) -> Dict:
         """
-        Get bin clusters - this would integrate with clustering service
-        For now, create simple geographic clusters as placeholder
+        Get bin clusters using the cached clustering service if available,
+        otherwise fallback to simple clustering
         """
         try:
-            # This should call the clustering service
-            # For now, create a simple mock cluster based on coordinates
+            # Use cached clustering from agent if available
+            if self.clustering_callback:
+                print("📌 DecisionService: Using cached clustering from agent")
+                return self.clustering_callback(bins_data)
             
-            if len(bins_data) < 2:
-                return {0: bins_data}
-            
-            # Simple clustering by proximity (placeholder)
-            clusters = {}
-            cluster_id = 0
-            processed_bins = set()
-            
-            for i, bin_data in enumerate(bins_data):
-                if bin_data['id'] in processed_bins:
-                    continue
-                
-                # Start new cluster
-                cluster_bins = [bin_data]
-                processed_bins.add(bin_data['id'])
-                
-                # Find nearby bins (within ~500m)
-                for j, other_bin in enumerate(bins_data):
-                    if i != j and other_bin['id'] not in processed_bins:
-                        distance = self._calculate_distance(
-                            bin_data['lat'], bin_data['lng'],
-                            other_bin['lat'], other_bin['lng']
-                        )
-                        
-                        if distance < 0.5:  # 500m threshold
-                            cluster_bins.append(other_bin)
-                            processed_bins.add(other_bin['id'])
-                
-                clusters[cluster_id] = cluster_bins
-                cluster_id += 1
-            
-            return clusters
+            # Fallback to centralized clustering service if no callback provided
+            print("📌 DecisionService: Using ClusteringService fallback (no agent callback)")
+            clustering_service = ClusteringService()
+            return clustering_service.create_simple_dynamic_clusters(bins_data, None)
             
         except Exception as e:
             print(f"⚠️ Clustering error: {e}")

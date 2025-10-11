@@ -14,23 +14,35 @@ class WasteCollectionAgent:
     """Main coordination layer with VROOM-powered optimization and simple dynamic clustering"""
     
     def __init__(self, api_key: Optional[str] = None):
+        print(f"🏗️ Creating new WasteCollectionAgent instance - agent_id={id(self)}")
         self.api_key = api_key
         self.bins_data = []
+        self.depot_data = []  # Keep latest depots list for clustering
         
         # Initialize modular services with VROOM
         self.osrm_service = OSRMService()
         self.vroom_service = VROOMService()
         self.optimization_service = OptimizationService(self.vroom_service)
-        self.decision_service = DecisionService(self.optimization_service, self.vroom_service)
         self.simulation_service = SimulationService(self.osrm_service)
         self.clustering_service = ClusteringService(osrm_service=self.osrm_service)
         
-        # Initialize proactive cluster dispatch service
-        self.proactive_dispatch = ProactiveClusterDispatchService(self.clustering_service)
+        # Initialize decision service with clustering callback to use our cached clusters
+        self.decision_service = DecisionService(
+            self.optimization_service, 
+            self.vroom_service,
+            clustering_callback=self.get_clusters  # Pass our cached clustering method
+        )
         
-        # Cache for clusters
+        # Initialize proactive cluster dispatch service with shared clustering callback
+        self.proactive_dispatch = ProactiveClusterDispatchService(
+            self.clustering_service,
+            clustering_callback=self.get_clusters  # Pass our cached clustering method
+        )
+        
+        # Cache for clusters - improved caching system
         self.cached_clusters = None
         self.cached_bin_count = 0
+        self.cached_bin_positions_hash = None  # Hash of bin positions for cache invalidation
 
         # Simple in-memory queue of bin IDs prioritized for collection
         # This queue is rebuilt on each routing cycle based on urgency and recency
@@ -81,11 +93,8 @@ class WasteCollectionAgent:
         # Add clustering information if bins data is available
         if self.bins_data:
             try:
-                # Get depot data if available
-                depot_data = None
-                # Try to get depot from system data (this could be enhanced)
-                
-                clustering_info = self.clustering_service.get_clustering_info(self.bins_data, depot_data)
+                # Use latest depot data if available for info
+                clustering_info = self.clustering_service.get_clustering_info(self.bins_data, getattr(self, 'depot_data', None))
                 status["clustering_info"] = {
                     "approach": clustering_info['approach'],
                     "dynamic_threshold_m": clustering_info['dynamic_threshold_m'],
@@ -195,22 +204,29 @@ class WasteCollectionAgent:
     
     def get_clusters(self, bins_data: List[Dict], depot_data: Optional[List[Dict]] = None) -> Dict:
         """Get cached clusters or create new ones using enhanced adaptive clustering"""
-        if (self.cached_clusters is None or 
-            len(bins_data) != self.cached_bin_count):
+        
+        # Create a hash of bin positions (lat, lng, id) for cache validation
+        # Only recalculate clustering if bin positions/count change, not fill levels
+        positions_data = [(bin_data['id'], bin_data['lat'], bin_data['lng']) for bin_data in bins_data]
+        positions_hash = hash(tuple(sorted(positions_data)))
+        
+        # Check if we need to recalculate clustering
+        need_recalculation = (
+            self.cached_clusters is None or 
+            len(bins_data) != self.cached_bin_count or
+            positions_hash != self.cached_bin_positions_hash
+        )
+        
+        if need_recalculation:
+            print(f"🔄 AGENT: Recalculating clusters: bins_changed={len(bins_data) != self.cached_bin_count}, "
+                  f"positions_changed={positions_hash != self.cached_bin_positions_hash}, "
+                  f"agent_id={id(self)}")
             
-            # Use adaptive clustering for better results
-            # Use depot data from parameter or fallback to bins_data attribute
-            depots = depot_data or getattr(self, 'depot_data', None)
-            
-            # Extract first depot if we have a list
-            depot = None
-            if depots and isinstance(depots, list) and len(depots) > 0:
-                depot = depots[0]
-            elif depots and isinstance(depots, dict):
-                depot = depots
-            
-            self.cached_clusters = self.clustering_service.create_simple_dynamic_clusters(bins_data, depot)
+            # Use per-bin proximity clustering with full depot list if available
+            depots = depot_data if depot_data is not None else getattr(self, 'depot_data', None)
+            self.cached_clusters = self.clustering_service.create_simple_dynamic_clusters(bins_data, depots)
             self.cached_bin_count = len(bins_data)
+            self.cached_bin_positions_hash = positions_hash
             
             # Log clustering results
             logger.info(f"Created {len(self.cached_clusters)} clusters for {len(bins_data)} bins")
@@ -219,13 +235,22 @@ class WasteCollectionAgent:
             for cluster_id, info in cluster_info.items():
                 quality = info.get('quality_metrics', {})
                 logger.debug(f"Cluster {cluster_id}: {info['bin_ids']} - {quality.get('quality_rating', 'unknown')} quality")
+        else:
+            print(f"✅ AGENT: Using cached clusters ({len(self.cached_clusters or {})} clusters) - agent_id={id(self)}")
                     
-        return self.cached_clusters
+        return self.cached_clusters or {}
     
     # Legacy method name for compatibility
     def get_or_create_clusters(self, bins_data: List[Dict]) -> Dict:
         """Legacy method - redirects to enhanced get_clusters"""
         return self.get_clusters(bins_data)
+    
+    def invalidate_cluster_cache(self):
+        """Manually invalidate cluster cache - call when system configuration changes"""
+        print(f"🔄 AGENT: Manually invalidating cluster cache - agent_id={id(self)}")
+        self.cached_clusters = None
+        self.cached_bin_count = 0
+        self.cached_bin_positions_hash = None
     
     def calculate_dynamic_threshold(self, bin_data: Dict, simulation_time_seconds: float, 
                                    depot_data: Optional[Dict] = None) -> float:

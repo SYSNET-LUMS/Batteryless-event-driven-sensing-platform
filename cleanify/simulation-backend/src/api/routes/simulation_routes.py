@@ -1,4 +1,7 @@
-from flask import Blueprint, jsonify, request, current_app
+from flask import Blueprint, request, jsonify, current_app
+from typing import Any, cast
+from services.agent_manager import get_agent
+import traceback
 from config.settings import Config
 import math
 
@@ -103,10 +106,11 @@ def calculate_distance_km(lat1: float, lng1: float, lat2: float, lng2: float) ->
 def start_simulation():
     """Start simulation"""
     try:
-        agent = current_app.agent
-        repo = current_app.system_repository
+        agent = get_agent()
+        app = cast(Any, current_app)
+        repo = app.system_repository
         
-        if not agent or not repo.get_bins() or not repo.get_depots():
+        if not repo.get_bins() or not repo.get_depots():
             return jsonify({
                 "status": "error",
                 "message": "Need at least one depot and bins to start simulation"
@@ -114,6 +118,7 @@ def start_simulation():
         
         print("Starting simulation...")
         agent.bins_data = repo.get_bins()
+        agent.depot_data = repo.get_depots()
         
         return jsonify({
             "status": "success",
@@ -131,12 +136,15 @@ def simulation_step():
     """Simulation step with coordination support"""
     try:
         data = request.json
+        if not isinstance(data, dict):
+            return jsonify({"status": "error", "message": "Invalid or missing JSON body"}), 400
         time_delta = data.get('time_delta', 1)
         simulation_time = data.get('simulation_time', 7)
         
-        agent = current_app.agent
-        repo = current_app.system_repository
-        schedule_service = current_app.schedule_service
+        agent = get_agent()
+        app = cast(Any, current_app)
+        repo = app.system_repository
+        schedule_service = app.schedule_service
         
         if agent:
             ready_dispatches = agent.process_waiting_trucks(simulation_time)
@@ -231,19 +239,21 @@ def simulation_step():
         
         # Get traffic info
         traffic_info = {}
-        if agent and hasattr(agent, 'traffic_manager'):
-            config = Config()
-            start_hour = config.SIMULATION_START_HOUR
-            current_time_min = (start_hour * 60) + (simulation_time // 60)
-            current_hour = (current_time_min // 60) % 24
-            
-            traffic_info = {
-                'current_density': agent.traffic_manager.get_density_at_time(current_time_min),
-                'current_hour': current_hour,
-                'time_of_day': f"{current_hour:02d}:{(current_time_min % 60):02d}",
-                'traffic_level': 'Heavy' if agent.traffic_manager.get_density_at_time(current_time_min) > 5 else 
-                                'Moderate' if agent.traffic_manager.get_density_at_time(current_time_min) > 2 else 'Light'
-            }
+        if agent:
+            tm = getattr(agent, 'traffic_manager', None)
+            if tm is not None:
+                config = Config()
+                start_hour = config.SIMULATION_START_HOUR
+                current_time_min = (start_hour * 60) + (simulation_time // 60)
+                current_hour = (current_time_min // 60) % 24
+                
+                traffic_info = {
+                    'current_density': tm.get_density_at_time(current_time_min),
+                    'current_hour': current_hour,
+                    'time_of_day': f"{current_hour:02d}:{(current_time_min % 60):02d}",
+                    'traffic_level': 'Heavy' if tm.get_density_at_time(current_time_min) > 5 else 
+                                    'Moderate' if tm.get_density_at_time(current_time_min) > 2 else 'Light'
+                }
         
         # Update clusters if needed
         clusters_data = {}
@@ -277,7 +287,10 @@ def get_route():
     """Get OSRM route between two points"""
     try:
         data = request.json
-        service = current_app.routing_service
+        if not isinstance(data, dict):
+            return jsonify({"status": "error", "message": "Invalid or missing JSON body"}), 400
+        app = cast(Any, current_app)
+        service = app.routing_service
         
         route_info = service.get_route_with_waypoints(
             data['from_lat'], data['from_lng'],
