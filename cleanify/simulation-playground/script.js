@@ -27,6 +27,26 @@ let simulationStartHour = 7; // Default value, will be fetched from backend
 // Backend API configuration
 const API_BASE = 'http://localhost:5001/api';
 
+// ---------- Small utilities (keep near top for reuse) ----------
+// Convert simulation seconds to a clock string based on simulationStartHour.
+// If withSeconds is true, returns HH:MM:SS else HH:MM
+function formatSimTime(simSeconds, withSeconds = false) {
+    const actual = simSeconds + (simulationStartHour * 3600);
+    const h = Math.floor(actual / 3600) % 24;
+    const m = Math.floor((actual % 3600) / 60);
+    const s = Math.floor(actual % 60);
+    const hh = h.toString().padStart(2, '0');
+    const mm = m.toString().padStart(2, '0');
+    if (!withSeconds) return `${hh}:${mm}`;
+    const ss = s.toString().padStart(2, '0');
+    return `${hh}:${mm}:${ss}`;
+}
+
+// Compute remaining wait minutes given an absolute wait-until time and current sim time
+function getWaitRemainingMinutes(waitUntil, currentTime) {
+    return Math.max(0, Math.ceil((waitUntil - currentTime) / 60));
+}
+
 // Initialize the application
 document.addEventListener('DOMContentLoaded', function() {
     initializeMap();
@@ -795,7 +815,7 @@ async function assignIdleTrucks() {
                             assignedBins.add(targetBinId);
                             truck.hasAssignment = true;
                             await assignTruckToRoute(truck, targetBin);
-                            console.log(`✅ Assigned ${truck.id} → ${targetBinId}`);
+                            // Assignment logged inside assignTruckToRoute
                         }
                     }
                 }
@@ -885,7 +905,7 @@ async function performCollection(truck) {
                 truck.targetBin = nextPlanned;
                 truck.status = 'traveling';
                 await assignTruckToRoute(truck, nextPlanned);
-                console.log(`🚛 ${truck.id} continuing to planned bin: ${nextPlanned.id}`);
+                // Assignment logged inside assignTruckToRoute
                 return; // continue journey within cluster
             } else {
                 // Can't fit next planned bin; store remaining plan for after dump
@@ -918,7 +938,7 @@ async function performCollection(truck) {
             const remainingBins = remainingIds
                 .map(id => items.bins.find(localBin => localBin.id === id))
                 .filter(Boolean);
-            console.log("Cluster bins from backend:", remainingIds);
+            // Cluster data logged at higher level when needed
 
             // Determine which of these can fit before needing a dump
             const feasibleBins = [];
@@ -947,7 +967,7 @@ async function performCollection(truck) {
                 truck.targetBin = next;
                 truck.status = 'traveling';
                 await assignTruckToRoute(truck, next);
-                console.log(`🚛 ${truck.id} going to next cluster bin: ${next.id}`);
+                // Assignment logged inside assignTruckToRoute
                 return;
             }
         }
@@ -1092,6 +1112,15 @@ async function callBackendSimulationStep(timeDelta) {
                 }
             });
             
+            // NEW: Trigger proactive dispatch when bins cross threshold in this step
+            if (Array.isArray(data.bins_hit_threshold) && data.bins_hit_threshold.length > 0) {
+                console.log(`⚠️ Bins hit threshold this step: ${data.bins_hit_threshold.join(', ')}`);
+                for (const binId of data.bins_hit_threshold) {
+                    // Fire-and-forget; internal logging will show the decision
+                    handleBinReachedDT(binId);
+                }
+            }
+
             // Process clusters and assign colors
             const clusterColors = ['#e74c3c', '#3498db', '#2ecc71', '#f39c12', '#9b59b6'];
             const processedClusters = new Map();
@@ -1150,6 +1179,30 @@ async function callBackendSimulationStep(timeDelta) {
         }
     } catch (error) {
         console.error('Backend simulation step failed:', error);
+    }
+}
+
+// POST helper: notify backend when a bin crosses its disposal threshold
+async function handleBinReachedDT(binId) {
+    try {
+        console.log(`🔔 Triggering proactive dispatch for bin ${binId} at t=${simulationTime}s`);
+        const response = await fetch(`${API_BASE}/bin_reached_dt`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                bin_id: binId,
+                simulation_time: simulationTime
+            })
+        });
+        const data = await response.json();
+        if (data.status === 'success') {
+            const decision = data.dispatch_decision || {};
+            console.log(`🤖 Proactive decision for ${binId}:`, decision);
+        } else {
+            console.warn(`❌ Proactive dispatch call failed for ${binId}:`, data.message || data);
+        }
+    } catch (err) {
+        console.error(`⚠️ Error calling /api/bin_reached_dt for ${binId}:`, err);
     }
 }
 
@@ -1235,7 +1288,7 @@ function updateTrucksList() {
         let cardClass = 'normal';
         
         if (truck.status === 'waiting') {
-            const waitRemaining = Math.max(0, Math.ceil((truck.waitingUntil - simulationTime) / 60));
+            const waitRemaining = getWaitRemainingMinutes(truck.waitingUntil, simulationTime);
             statusDisplay = `waiting (${waitRemaining}min)`;
             targetInfo = ` - ${truck.waitReason}`;
             cardClass = 'warning';  // Highlight waiting trucks
@@ -1305,15 +1358,8 @@ let displayedSimulationTime = 0;
 
 function updateSimulationTime() {
     displayedSimulationTime = lerp(displayedSimulationTime, simulationTime, 0.2);
-    
-    const actualTimeInSeconds = displayedSimulationTime + (simulationStartHour * 3600);
-    
-    const hours = Math.floor(actualTimeInSeconds / 3600) % 24;
-    const minutes = Math.floor((actualTimeInSeconds % 3600) / 60);
-    const seconds = Math.floor(actualTimeInSeconds % 60);
-    
-    const timeString = `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
-    const timeStringHM = `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}`;
+    const timeString = formatSimTime(displayedSimulationTime, true);
+    const timeStringHM = formatSimTime(displayedSimulationTime, false);
     
     // Update main simulation time display (map overlay)
     const timeElement = document.getElementById('simulationTime');
@@ -1719,7 +1765,7 @@ function updateWaitingTrucks() {
     let html = '<strong>Waiting Trucks:</strong>';
     
     waitingTrucks.forEach(truck => {
-        const waitRemaining = Math.max(0, Math.ceil((truck.waitingUntil - simulationTime) / 60));
+        const waitRemaining = getWaitRemainingMinutes(truck.waitingUntil, simulationTime);
         html += `
             <div class="waiting-truck-item">
                 ${truck.id}: ${waitRemaining}min - ${truck.waitReason || 'Traffic optimization'}
@@ -2002,12 +2048,8 @@ async function deleteSchedule(scheduleId) {
 }
 
 function formatNextExecutionTime(nextExecutionTime) {
-    // Convert simulation time to hours and minutes
-    const startHour = 7; // Simulation starts at 7 AM
-    const totalMinutes = (startHour * 60) + (nextExecutionTime / 60);
-    const hours = Math.floor(totalMinutes / 60) % 24;
-    const minutes = Math.floor(totalMinutes % 60);
-    return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}`;
+    // Use centralized formatter (HH:MM)
+    return formatSimTime(nextExecutionTime, false);
 }
 
 function updateSchedulesDisplay() {
