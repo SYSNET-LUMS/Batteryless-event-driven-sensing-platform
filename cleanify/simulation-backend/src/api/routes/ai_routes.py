@@ -198,3 +198,43 @@ def check_urgent_bins():
         
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
+
+@bp.route('/update_truck_assignment', methods=['POST'])
+def update_truck_assignment():
+    """Update truck assignment status for proactive dispatch tracking"""
+    try:
+        agent = get_agent()
+        
+        if not agent:
+            return jsonify({"status": "error", "message": "Agent not available"}), 400
+        
+        data = request.json or {}
+        truck_id = data.get('truck_id')
+        status = data.get('status')
+        assigned_bins = data.get('assigned_bins', [])
+        simulation_time = data.get('simulation_time', 0)
+        
+        if not truck_id or not status:
+            return jsonify({"status": "error", "message": "truck_id and status required"}), 400
+        
+        # Update truck assignment status in agent
+        agent.update_truck_assignment_status(truck_id, status)
+        
+        # If route started, also update proactive dispatch with bin assignments
+        if status == 'route_started' and assigned_bins:
+            # Update proactive dispatch using existing method
+            agent.proactive_dispatch.update_truck_assignments({
+                truck_id: {
+                    'status': status,
+                    'assigned_bins': assigned_bins,
+                    'simulation_time': simulation_time
+                }
+            })
+        
+        return jsonify({
+            "status": "success",
+            "message": f"Truck {truck_id} status updated to {status}"
+        })
+        
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500

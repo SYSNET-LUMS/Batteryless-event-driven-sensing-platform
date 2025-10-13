@@ -505,6 +505,9 @@ function handleRouteCompletion(truck, routeType) {
         hideItemRoute(truck, 'return');
         console.log(`${truck.id} completed return route`);
 
+        // Notify proactive dispatch that route is completed
+        updateTruckAssignmentStatus(truck.id, 'route_completed');
+
         // If there is a pending route (remaining cluster bins), resume immediately
         if (truck.pendingRoute && truck.pendingRoute.length > 0) {
             const pending = truck.pendingRoute;
@@ -816,6 +819,9 @@ async function assignIdleTrucks() {
                             truck.hasAssignment = true;
                             await assignTruckToRoute(truck, targetBin);
                             // Assignment logged inside assignTruckToRoute
+                            
+                            // Notify proactive dispatch service about route start
+                            await updateTruckAssignmentStatus(truck.id, 'route_started', route.route);
                         }
                     }
                 }
@@ -1203,6 +1209,30 @@ async function handleBinReachedDT(binId) {
         }
     } catch (err) {
         console.error(`⚠️ Error calling /api/bin_reached_dt for ${binId}:`, err);
+    }
+}
+
+// POST helper: update truck assignment status for proactive dispatch tracking
+async function updateTruckAssignmentStatus(truckId, status, assignedBins = []) {
+    try {
+        const response = await fetch(`${API_BASE}/update_truck_assignment`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                truck_id: truckId,
+                status: status,
+                assigned_bins: assignedBins,
+                simulation_time: simulationTime
+            })
+        });
+        const data = await response.json();
+        if (data.status === 'success') {
+            console.log(`📋 Updated truck ${truckId} status to ${status}`);
+        } else {
+            console.warn(`❌ Failed to update truck ${truckId} status:`, data.message || data);
+        }
+    } catch (err) {
+        console.error(`⚠️ Error updating truck ${truckId} assignment status:`, err);
     }
 }
 

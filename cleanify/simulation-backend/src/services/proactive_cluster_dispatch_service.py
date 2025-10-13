@@ -339,8 +339,30 @@ class ProactiveClusterDispatchService:
                     del self.active_cluster_assignments[cluster_id]
                     
             elif status == 'route_started':
-                # Assignment is now active - could track progress here
-                pass
+                # Track truck assignment to clusters to prevent duplicates
+                assigned_bins = update_info.get('assigned_bins', [])
+                simulation_time = update_info.get('simulation_time', 0)
+                
+                if assigned_bins:
+                    # Find which cluster these bins belong to
+                    # Use clustering to determine cluster membership
+                    if self.clustering_callback:
+                        # Get all bins to determine clusters
+                        # Note: This is a simplified approach - in production,
+                        # we'd want to get actual bin data from repository
+                        logger.info(f"Tracking assignment: truck {truck_id} → bins {assigned_bins}")
+                        
+                        # For now, create a basic cluster key from first bin
+                        # The actual cluster determination would need full bin data
+                        primary_bin = assigned_bins[0] if assigned_bins else None
+                        if primary_bin:
+                            cluster_key = f"cluster_{primary_bin}"
+                            self.active_cluster_assignments[cluster_key] = {
+                                'truck_id': truck_id,
+                                'assigned_bins': assigned_bins,
+                                'assignment_time': simulation_time,
+                                'status': 'active'
+                            }
     
     def get_active_assignments(self) -> Dict:
         """Get current active cluster assignments for monitoring"""
