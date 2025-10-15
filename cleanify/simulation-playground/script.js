@@ -48,7 +48,7 @@ function getWaitRemainingMinutes(waitUntil, currentTime) {
 }
 
 // Initialize the application
-document.addEventListener('DOMContentLoaded', function() {
+document.addEventListener('DOMContentLoaded', function () {
     initializeMap();
     initializeControls();
     initializeModal();
@@ -70,7 +70,7 @@ const ITEM_CONFIGS = {
             fillRate: 3.5,
             threshold: 80
         },
-        getStatusColor: function(bin) {
+        getStatusColor: function (bin) {
             if (bin.fillLevel >= 90) return '#e74c3c'; // urgent
             if (bin.fillLevel >= 70) return '#f39c12'; // warning
             if (bin.fillLevel >= 50) return '#f1c40f'; // moderate
@@ -87,7 +87,7 @@ const ITEM_CONFIGS = {
             currentLoad: 0,
             status: 'idle'
         },
-        getStatusColor: function(truck) {
+        getStatusColor: function (truck) {
             return '#3498db';
         }
     },
@@ -98,7 +98,7 @@ const ITEM_CONFIGS = {
         defaultValues: {
             name: 'Default Depot'
         },
-        getStatusColor: function(depot) {
+        getStatusColor: function (depot) {
             return '#8e44ad';
         }
     }
@@ -119,21 +119,21 @@ async function initializeBackend() {
         const response = await fetch(`${API_BASE}/health`);
         const data = await response.json();
         console.log('Connection established:', data);
-        
+
         // Initialize system
         await fetch(`${API_BASE}/initialize`, { method: 'POST' });
         console.log('Backend initialized');
-        
+
         // Fetch simulation start hour from backend
         await fetchSimulationStartHour();
-        
+
         // Initialize simulation time display after config is loaded
         updateSimulationTime();
-        
+
     } catch (error) {
         console.error('Backend connection failed:', error);
         showBackendError();
-        
+
         // Still initialize time display with default value
         updateSimulationTime();
     }
@@ -144,7 +144,7 @@ async function fetchSimulationStartHour() {
         console.log('Fetching simulation start hour from backend...');
         const response = await fetch(`${API_BASE}/config/simulation_start_hour`);
         const data = await response.json();
-        
+
         if (data.status === 'success') {
             simulationStartHour = data.simulation_start_hour;
             console.log(`✅ Simulation start hour fetched from backend: ${simulationStartHour}`);
@@ -162,7 +162,7 @@ async function fetchTrafficInfoFromBackend(simulationTimeParam) {
     try {
         const response = await fetch(`${API_BASE}/config/traffic_info?simulation_time=${simulationTimeParam}`);
         const data = await response.json();
-        
+
         if (data.status === 'success' && data.traffic_info) {
             // Use existing updateTrafficDisplay function that properly handles backend traffic data
             updateTrafficDisplay(data.traffic_info);
@@ -186,7 +186,7 @@ function showBackendError() {
 
 function initializeMap() {
     // Initialize map centered on Islamabad
-    map = L.map('map').setView([33.6844, 73.0479], 13);    
+    map = L.map('map').setView([33.6844, 73.0479], 13);
     // Add tile layer
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
         attribution: '© OpenStreetMap contributors'
@@ -199,19 +199,19 @@ function initializeControls() {
     document.getElementById('startBtn').addEventListener('click', startSimulation);
     document.getElementById('stopBtn').addEventListener('click', stopSimulation);
     document.getElementById('resetBtn').addEventListener('click', resetSimulation);
-    
+
     // Speed slider
     const speedSlider = document.getElementById('speedSlider');
-    speedSlider.addEventListener('input', function() {
+    speedSlider.addEventListener('input', function () {
         simulationSpeed = parseInt(this.value);
         document.getElementById('speedValue').textContent = simulationSpeed + 'x';
     });
-    
+
     // Add item buttons - auto-add items in map center area
     document.getElementById('addBinBtn').addEventListener('click', () => autoAddItem('bin'));
     document.getElementById('addTruckBtn').addEventListener('click', () => autoAddItem('truck'));
     document.getElementById('addDepotBtn').addEventListener('click', () => autoAddItem('depot'));
-    
+
     initializeSaveLoadControls();
 }
 
@@ -221,7 +221,7 @@ function initializeSaveLoadControls() {
     document.getElementById('saveSystemBtn').addEventListener('click', saveCurrentSystem);
     document.getElementById('loadSystemBtn').addEventListener('click', openLoadDialog);
     document.getElementById('fileInput').addEventListener('change', handleFileLoad);
-    
+
     // Load saved files list on startup
     loadSavedFilesList();
 }
@@ -232,14 +232,14 @@ function initializeModal() {
     const cancelBtn = document.getElementById('cancelBtn');
     const saveBtn = document.getElementById('saveBtn');
     const deleteBtn = document.getElementById('deleteBtn');
-    
+
     closeBtn.addEventListener('click', closeModal);
     cancelBtn.addEventListener('click', closeModal);
     saveBtn.addEventListener('click', saveItemProperties);
     deleteBtn.addEventListener('click', deleteItem);
-    
+
     // Close modal when clicking outside
-    window.addEventListener('click', function(event) {
+    window.addEventListener('click', function (event) {
         if (event.target === modal) {
             closeModal();
         }
@@ -249,11 +249,21 @@ function initializeModal() {
 function createMarker(item, type) {
     const config = ITEM_CONFIGS[type];
     const color = config.getStatusColor(item);
+    
+    let html;
+    if (type === 'bin') {
+        // Use circular shape for bins with smooth transitions
+        html = `<div class="bin-marker-content" style="background: ${color}; width: ${config.size[0]}px; height: ${config.size[1]}px; border-radius: 50%; border: 2px solid #fff; box-shadow: 0 2px 6px rgba(0,0,0,0.3); display: flex; align-items: center; justify-content: center; color: white; font-size: 14px; transition: all 0.3s ease;">${config.icon}</div>`;
+    } else {
+        // Use rectangular shape for trucks and depots
+        html = `<div style="background: ${color}; width: ${config.size[0]}px; height: ${config.size[1]}px; border-radius: 4px; border: 2px solid #fff; box-shadow: 0 2px 4px rgba(0,0,0,0.3); display: flex; align-items: center; justify-content: center; color: white; font-size: 14px;">${config.icon}</div>`;
+    }
+    
     const icon = L.divIcon({
         className: `${type}-icon`,
-        html: `<div style="background: ${color}; width: ${config.size[0]}px; height: ${config.size[1]}px; border-radius: 4px; border: 2px solid #fff; box-shadow: 0 2px 4px rgba(0,0,0,0.3); display: flex; align-items: center; justify-content: center; color: white; font-size: 14px;">${config.icon}</div>`,
+        html: html,
         iconSize: config.size,
-        iconAnchor: [config.size[0]/2, config.size[1]/2]
+        iconAnchor: [config.size[0] / 2, config.size[1] / 2]
     });
 
     const marker = L.marker([item.lat, item.lng], { icon: icon, draggable: true }).addTo(map);
@@ -267,7 +277,7 @@ function createMarker(item, type) {
 async function addItem(type, lat, lng) {
     const center = map.getCenter();
     const bounds = map.getBounds();
-    
+
     if (!lat || !lng) {
         const latOffset = (Math.random() - 0.5) * (bounds.getNorth() - bounds.getSouth()) * 0.3;
         const lngOffset = (Math.random() - 0.5) * (bounds.getEast() - bounds.getWest()) * 0.3;
@@ -282,25 +292,25 @@ async function addItem(type, lat, lng) {
             lng: lng,
             ...config.defaultValues
         };
-        
+
         // Special handling for trucks (place at depot)
         if (type === 'truck' && items.depots.length > 0) {
             const nearestDepot = items.depots[0];
             requestData.lat = nearestDepot.lat;
             requestData.lng = nearestDepot.lng;
         }
-        
+
         const response = await fetch(`${API_BASE}/${type}`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(requestData)
         });
-        
+
         const data = await response.json();
         if (data.status === 'success') {
             const item = data[type];
             item.marker = createMarker(item, type);
-            
+
             // Add type-specific properties
             if (type === 'truck') {
                 item.targetBin = null;
@@ -310,12 +320,12 @@ async function addItem(type, lat, lng) {
                 item.returnRoute = [];
                 item.returnRouteIndex = 0;
                 item.waitingUntil = null;  // ADD THIS
-                item.waitReason = ''; 
+                item.waitReason = '';
             }
-            
+
             items[`${type}s`].push(item);
             updateStats();
-            
+
             if (type === 'depot') {
                 map.setView([lat, lng], 14);
             }
@@ -337,7 +347,7 @@ async function updateBackendPosition(item, type) {
             lat: item.lat,
             lng: item.lng
         };
-        
+
         // Add type-specific properties
         if (type === 'bin') {
             dataToSend.fillLevel = item.fillLevel;
@@ -355,7 +365,7 @@ async function updateBackendPosition(item, type) {
         } else if (type === 'depot') {
             dataToSend.name = item.name;
         }
-        
+
         await fetch(`${API_BASE}/${type}`, {
             method: 'PUT',
             headers: { 'Content-Type': 'application/json' },
@@ -378,11 +388,31 @@ function updateItemMarkerColor(item, type) {
     const config = ITEM_CONFIGS[type];
     const color = config.getStatusColor(item);
 
+    if (type === 'bin') {
+        // Use smooth transition for bins
+        const markerElement = marker._icon;
+        if (markerElement) {
+            const binDiv = markerElement.querySelector('.bin-marker-content');
+            if (binDiv) {
+                binDiv.style.background = color;
+                return; // Exit early, we've updated smoothly
+            }
+        }
+    }
+
+    // Fallback for non-bins or when smooth update fails
+    let html;
+    if (type === 'bin') {
+        html = `<div class="bin-marker-content" style="background: ${color}; width: ${config.size[0]}px; height: ${config.size[1]}px; border-radius: 50%; border: 2px solid #fff; box-shadow: 0 2px 6px rgba(0,0,0,0.3); display: flex; align-items: center; justify-content: center; color: white; font-size: 14px; transition: all 0.3s ease;">${config.icon}</div>`;
+    } else {
+        html = `<div style="background: ${color}; width: ${config.size[0]}px; height: ${config.size[1]}px; border-radius: 4px; border: 2px solid #fff; box-shadow: 0 2px 4px rgba(0,0,0,0.3); display: flex; align-items: center; justify-content: center; color: white; font-size: 14px;">${config.icon}</div>`;
+    }
+
     const icon = L.divIcon({
         className: `${type}-icon`,
-        html: `<div style="background: ${color}; width: ${config.size[0]}px; height: ${config.size[1]}px; border-radius: 4px; border: 2px solid #fff; box-shadow: 0 2px 4px rgba(0,0,0,0.3); display: flex; align-items: center; justify-content: center; color: white; font-size: 14px;">${config.icon}</div>`,
+        html: html,
         iconSize: config.size,
-        iconAnchor: [config.size[0]/2, config.size[1]/2]
+        iconAnchor: [config.size[0] / 2, config.size[1] / 2]
     });
 
     marker.setIcon(icon);
@@ -425,7 +455,7 @@ function hideItemRoute(item, routeType = 'both') {
     routesToHide.forEach(type => {
         const routeKey = `${item.id}_${type}`;
         const polyline = routePolylines.get(routeKey);
-        
+
         if (polyline && map.hasLayer(polyline)) {
             map.removeLayer(polyline);
             routePolylines.delete(routeKey);
@@ -541,24 +571,24 @@ async function startSimulation() {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' }
         });
-        
+
         const data = await response.json();
-        
+
         if (data.status === 'success') {
             isSimulationRunning = true;
-            
+
             document.getElementById('startBtn').disabled = true;
             document.getElementById('stopBtn').disabled = false;
-            
+
             // APPLY AI ROUTING DECISIONS TO TRUCKS
             await applyAIRoutingDecisions();
-            
+
             // Start simulation loop
             simulationInterval = setInterval(simulationStep, Math.max(20, 1000 / simulationSpeed));
-            
+
             console.log('✅ Simulation started');
         }
-        
+
     } catch (error) {
         console.error('⚠️ Failed to start simulation:', error);
         alert(`Failed to start simulation: ${error.message}`);
@@ -574,15 +604,15 @@ async function applyAIRoutingDecisions() {
                 simulation_time: simulationTime  // ADD THIS
             })
         });
-        
+
         const data = await response.json();
-        
+
         if (data.status === 'success' && data.result && data.result.length > 0) {
             console.log(`🚛 Processing ${data.result.length} routing decisions...`);
-            
+
             for (const route of data.result) {
                 const truck = items.trucks.find(t => t.id === route.truck_id);
-                
+
                 if (truck && truck.status === 'idle') {
                     // Check if truck should wait
                     if (route.dispatch === 'wait') {
@@ -603,7 +633,7 @@ async function applyAIRoutingDecisions() {
         } else {
             console.log('ℹNo urgent bins for routing');
         }
-        
+
     } catch (error) {
         console.error('Routing application failed:', error);
     }
@@ -651,15 +681,15 @@ async function checkScheduledDispatches() {
         // Get active schedules from backend
         const response = await fetch(`${API_BASE}/schedules/active?simulation_time=${simulationTime}`);
         const data = await response.json();
-        
+
         if (data.status === 'success' && data.active_schedules.length > 0) {
             console.log(`📅 Found ${data.active_schedules.length} scheduled dispatches ready for execution`);
-            
+
             for (const schedule of data.active_schedules) {
                 await executeScheduledDispatch(schedule);
             }
         }
-        
+
     } catch (error) {
         console.error('Error checking scheduled dispatches:', error);
     }
@@ -673,36 +703,36 @@ async function executeScheduledDispatch(schedule) {
             console.warn(`Truck ${schedule.truck_id} not found for scheduled dispatch`);
             return;
         }
-        
+
         // Check if truck is available
         if (truck.status !== 'idle') {
             console.warn(`Truck ${schedule.truck_id} is not idle (${truck.status}), skipping scheduled dispatch`);
             // Could implement queuing or rescheduling here
             return;
         }
-        
+
         // Mark schedule as executing
         const executeResponse = await fetch(`${API_BASE}/schedules/${schedule.id}/execute`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ simulation_time: simulationTime })
         });
-        
+
         const executeData = await executeResponse.json();
         if (executeData.status !== 'success') {
             console.error(`Failed to mark schedule ${schedule.id} as executing`);
             return;
         }
-        
+
         // Execute the dispatch
         truck.dispatchReason = `Scheduled: ${schedule.reason}`;
         truck.dispatchTime = simulationTime;
-        
+
         // Assign truck to the scheduled route
         await assignTruckToMultipleBins(truck, schedule.target_bin_ids);
-        
+
         console.log(`📅 ✅ Executed scheduled dispatch: ${schedule.truck_id} → ${schedule.target_bin_ids.join(', ')} (${schedule.area_name})`);
-        
+
         // Update schedule status to completed after successful dispatch
         setTimeout(async () => {
             try {
@@ -711,14 +741,14 @@ async function executeScheduledDispatch(schedule) {
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ status: 'completed' })
                 });
-                
+
                 // Reload schedules to update UI
                 await loadSchedules();
             } catch (error) {
                 console.error('Error updating schedule status:', error);
             }
         }, 1000); // Small delay to ensure dispatch is processed
-        
+
     } catch (error) {
         console.error(`Error executing scheduled dispatch ${schedule.id}:`, error);
     }
@@ -731,19 +761,19 @@ async function handleScheduledDispatchFromBackend(dispatch) {
             console.warn(`Truck ${dispatch.truck_id} not found for backend scheduled dispatch`);
             return;
         }
-        
+
         // Set dispatch reason and execute
         truck.dispatchReason = dispatch.reason;
         truck.dispatchTime = simulationTime;
-        
+
         // Assign truck to the scheduled route
         await assignTruckToMultipleBins(truck, dispatch.route);
-        
+
         console.log(`📅 ✅ Backend scheduled dispatch executed: ${dispatch.truck_id} → ${dispatch.route.join(', ')}`);
-        
+
         // Reload schedules to update UI
         await loadSchedules();
-        
+
     } catch (error) {
         console.error('Error handling backend scheduled dispatch:', error);
     }
@@ -754,7 +784,7 @@ async function simulationStep() {
     await callBackendSimulationStep(simulationSpeed);
 
     items.trucks.forEach(updateTruck);
-    
+
     // Check for scheduled dispatches
     await checkScheduledDispatches();
 
@@ -780,10 +810,10 @@ async function assignIdleTrucks() {
                 simulation_time: simulationTime  // ADD THIS
             })
         });
-        
+
         // ... rest of the function remains the same but handle 'wait' decisions
         const data = await response.json();
-        
+
         if (data.status === 'success' && data.result?.length > 0) {
             const assignedBins = new Set();
             items.trucks.forEach(t => {
@@ -791,19 +821,19 @@ async function assignIdleTrucks() {
             });
 
             for (const route of data.result) {
-                const truck = items.trucks.find(t => 
-                    t.id === route.truck_id && 
-                    t.status === 'idle' && 
+                const truck = items.trucks.find(t =>
+                    t.id === route.truck_id &&
+                    t.status === 'idle' &&
                     !t.hasAssignment
                 );
-                
+
                 if (truck && route.route && route.route.length > 0) {
                     const targetBinId = route.route[0];
-                    
+
                     if (assignedBins.has(targetBinId)) {
                         continue;
                     }
-                    
+
                     // Handle wait decision
                     if (route.dispatch === 'wait') {
                         truck.status = 'waiting';
@@ -819,7 +849,7 @@ async function assignIdleTrucks() {
                             truck.hasAssignment = true;
                             await assignTruckToRoute(truck, targetBin);
                             // Assignment logged inside assignTruckToRoute
-                            
+
                             // Notify proactive dispatch service about route start
                             await updateTruckAssignmentStatus(truck.id, 'route_started', route.route);
                         }
@@ -892,7 +922,7 @@ async function performCollection(truck) {
     truck.currentLoad += wasteAmount;
     bin.fillLevel = 0;
     bin.lastCollection = simulationTime;
-    
+
     updateItemMarkerColor(bin, 'bin');
     await updateBackendPosition(bin, 'bin');
     collectionsToday++;
@@ -921,7 +951,7 @@ async function performCollection(truck) {
             }
         }
     }
-    
+
     // Check for other bins in cluster to collect
     try {
         const response = await fetch(`${API_BASE}/check_urgent_bins`, {
@@ -934,9 +964,9 @@ async function performCollection(truck) {
                 simulation_time: simulationTime
             })
         });
-        
+
         const data = await response.json();
-        
+
         if (data.status === 'success' && Array.isArray(data.bins_to_collect) && data.bins_to_collect.length > 1) {
             // Build full sequence from backend (preserve order), excluding the one just collected
             const allIds = data.bins_to_collect.map(b => b.id);
@@ -980,7 +1010,7 @@ async function performCollection(truck) {
     } catch (error) {
         console.error('Failed to check cluster bins:', error);
     }
-    
+
     // Return to depot if no more bins to collect or truck is full
     truck.status = 'returning_to_depot';
     truck.targetBin = null;
@@ -997,7 +1027,7 @@ async function performCollection(truck) {
 async function assignTruckToMultipleBins(truck, binIds) {
     const targetBins = binIds.map(id => items.bins.find(b => b.id === id)).filter(Boolean);
     if (targetBins.length === 0) return;
-    
+
     truck.status = 'traveling';
     truck.targetBin = targetBins[0];
     truck.clusterBins = targetBins;  // Store all cluster bins
@@ -1016,34 +1046,34 @@ async function assignTruckToRoute(truck, bin) {
     truck._routePending = true;
     try {
         const response = await fetch(`${API_BASE}/route`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-        from_lat: truck.lat,
-        from_lng: truck.lng,
-        to_lat: bin.lat,
-        to_lng: bin.lng
-        })
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                from_lat: truck.lat,
+                from_lng: truck.lng,
+                to_lat: bin.lat,
+                to_lng: bin.lng
+            })
         });
-            const data = await response.json();
-            
-            if (data.status === 'success') {
-                truck.targetBin = bin;
-                truck.status = 'traveling';
-                truck.route = data.route.waypoints || [];
-                truck.routeIndex = 0;
-                truck.totalDistance = data.route.distance;
-                
-                hideItemRoute(truck, 'forward');
-                showItemRoute(truck, 'forward');
-                
-                console.log(`🚛 ${truck.id} assigned to ${bin.id}`);
-            } else {
-                truck.targetBin = bin;
-                truck.status = 'traveling';
-                truck.route = [];
-            }
-        
+        const data = await response.json();
+
+        if (data.status === 'success') {
+            truck.targetBin = bin;
+            truck.status = 'traveling';
+            truck.route = data.route.waypoints || [];
+            truck.routeIndex = 0;
+            truck.totalDistance = data.route.distance;
+
+            hideItemRoute(truck, 'forward');
+            showItemRoute(truck, 'forward');
+
+            console.log(`🚛 ${truck.id} assigned to ${bin.id}`);
+        } else {
+            truck.targetBin = bin;
+            truck.status = 'traveling';
+            truck.route = [];
+        }
+
     } catch (error) {
         console.error('Route calculation failed:', error);
         truck.targetBin = bin;
@@ -1062,28 +1092,28 @@ async function getTruckReturnRoute(truck, depot) {
     truck._returnRoutePending = true;
     try {
         const response = await fetch(`${API_BASE}/route`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-        from_lat: truck.lat,
-        from_lng: truck.lng,
-        to_lat: depot.lat,
-        to_lng: depot.lng
-        })
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                from_lat: truck.lat,
+                from_lng: truck.lng,
+                to_lat: depot.lat,
+                to_lng: depot.lng
+            })
         });
-            const data = await response.json();
-            
-            if (data.status === 'success') {
-                truck.returnRoute = data.route.waypoints || [];
-                truck.returnRouteIndex = 0;
-                truck.totalReturnDistance = data.route.distance;
-                
-                showItemRoute(truck, 'return');
-            } else {
-                truck.returnRoute = [];
-                truck.returnRouteIndex = 0;
-            }
-        
+        const data = await response.json();
+
+        if (data.status === 'success') {
+            truck.returnRoute = data.route.waypoints || [];
+            truck.returnRouteIndex = 0;
+            truck.totalReturnDistance = data.route.distance;
+
+            showItemRoute(truck, 'return');
+        } else {
+            truck.returnRoute = [];
+            truck.returnRouteIndex = 0;
+        }
+
     } catch (error) {
         console.error('Failed to get return route:', error);
         truck.returnRoute = [];
@@ -1098,12 +1128,12 @@ async function callBackendSimulationStep(timeDelta) {
         const response = await fetch(`${API_BASE}/simulation_step`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ 
+            body: JSON.stringify({
                 time_delta: timeDelta,
                 simulation_time: simulationTime
             })
         });
-        
+
         const data = await response.json();
         if (data.status === 'success') {
             // Update bin data first
@@ -1112,12 +1142,12 @@ async function callBackendSimulationStep(timeDelta) {
                 if (localBin) {
                     const timeSinceCollection = simulationTime - (localBin.lastCollection || 0);
                     if (timeSinceCollection < 10 && localBin.fillLevel === 0) return;
-                    
+
                     localBin.fillLevel = backendBin.fillLevel;
                     localBin.dynamic_threshold = backendBin.dynamic_threshold;
                 }
             });
-            
+
             // NEW: Trigger proactive dispatch when bins cross threshold in this step
             if (Array.isArray(data.bins_hit_threshold) && data.bins_hit_threshold.length > 0) {
                 console.log(`⚠️ Bins hit threshold this step: ${data.bins_hit_threshold.join(', ')}`);
@@ -1131,7 +1161,7 @@ async function callBackendSimulationStep(timeDelta) {
             const clusterColors = ['#e74c3c', '#3498db', '#2ecc71', '#f39c12', '#9b59b6'];
             const processedClusters = new Map();
             let colorIndex = 0;
-            
+
             if (data.clusters) {
                 // Group bins by their cluster
                 Object.keys(data.clusters).forEach(binId => {
@@ -1145,36 +1175,16 @@ async function callBackendSimulationStep(timeDelta) {
                     }
                 });
             }
-            
-            // Update all bin markers
+
+            // Update all bin markers smoothly
             items.bins.forEach(bin => {
-                const config = ITEM_CONFIGS.bin;
-                const fillColor = config.getStatusColor(bin);
-                let borderColor = '#fff';
-                let borderWidth = '2px';
-                
-                // Find if bin is in a cluster
-                processedClusters.forEach((clusterInfo) => {
-                    if (clusterInfo.bins.includes(bin.id)) {
-                        borderColor = clusterInfo.color;
-                        borderWidth = '4px';
-                    }
-                });
-                
-                const icon = L.divIcon({
-                    className: 'bin-icon',
-                    html: `<div style="background: ${fillColor}; width: ${config.size[0]}px; height: ${config.size[1]}px; border-radius: 50%; border: ${borderWidth} solid ${borderColor}; box-shadow: 0 2px 6px rgba(0,0,0,0.3); display: flex; align-items: center; justify-content: center; color: white; font-size: 14px;">${config.icon}</div>`,
-                    iconSize: config.size,
-                    iconAnchor: [config.size[0]/2, config.size[1]/2]
-                });
-                
-                bin.marker.setIcon(icon);
+                updateBinMarkerStyle(bin, processedClusters);
             });
-            
+
             if (data.traffic_info) {
                 updateTrafficDisplay(data.traffic_info);
             }
-            
+
             // Handle scheduled dispatches
             if (data.schedule_dispatches && data.schedule_dispatches.length > 0) {
                 console.log(`📅 Processing ${data.schedule_dispatches.length} scheduled dispatches from backend`);
@@ -1240,13 +1250,13 @@ function calculateDistance(lat1, lng1, lat2, lng2) {
     const R = 6371;
     const dLat = (lat2 - lat1) * Math.PI / 180;
     const dLng = (lng2 - lng1) * Math.PI / 180;
-    const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
-    Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
-    Math.sin(dLng/2) * Math.sin(dLng/2);
-    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+    const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+        Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+        Math.sin(dLng / 2) * Math.sin(dLng / 2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
     return R * c;
 }
-    
+
 function findNearestDepot(truck) {
     if (items.depots.length === 0) return null;
     let nearest = items.depots[0];
@@ -1285,14 +1295,14 @@ function updateBinsList() {
         const dynamicThreshold = bin.dynamic_threshold || bin.threshold || 80;
         const staticThreshold = bin.threshold || 80;
         const isTargeted = items.trucks.some(truck => truck.targetBin === bin);
-        const statusText = isTargeted ? 'TARGETED' : 
-                        bin.fillLevel >= dynamicThreshold ? 'NEEDS COLLECTION' : 'OK';
-        
+        const statusText = isTargeted ? 'TARGETED' :
+            bin.fillLevel >= dynamicThreshold ? 'NEEDS COLLECTION' : 'OK';
+
         // Show both thresholds if they differ
-        const thresholdText = Math.abs(dynamicThreshold - staticThreshold) > 0.1 
+        const thresholdText = Math.abs(dynamicThreshold - staticThreshold) > 0.1
             ? `DT: ${dynamicThreshold.toFixed(2)}%`
             : `T: ${staticThreshold}%`;
-        
+
         const card = document.createElement('div');
         card.className = `item-card ${getStatusClass(bin.fillLevel)}`;
         card.innerHTML = `
@@ -1316,7 +1326,7 @@ function updateTrucksList() {
         let statusDisplay = truck.status;
         let targetInfo = '';
         let cardClass = 'normal';
-        
+
         if (truck.status === 'waiting') {
             const waitRemaining = getWaitRemainingMinutes(truck.waitingUntil, simulationTime);
             statusDisplay = `waiting (${waitRemaining}min)`;
@@ -1326,10 +1336,10 @@ function updateTrucksList() {
             // Show dispatch reason for 30 seconds after dispatch
             targetInfo += ` - ${truck.dispatchReason}`;
         } else {
-            targetInfo = truck.targetBin ? ` → ${truck.targetBin.id}` : 
-                        truck.targetDepot ? ` → ${truck.targetDepot.id}` : '';
+            targetInfo = truck.targetBin ? ` → ${truck.targetBin.id}` :
+                truck.targetDepot ? ` → ${truck.targetDepot.id}` : '';
         }
-        
+
         const card = document.createElement('div');
         card.className = `item-card ${cardClass}`;
         card.innerHTML = `
@@ -1346,36 +1356,200 @@ function updateTrucksList() {
     });
 }
 
-function updateCollectionQueue() {
-    const container = document.getElementById('collectionQueue');
-    container.innerHTML = '';
-    const queue = items.bins
-        .filter(bin => {
-            const threshold = bin.dynamic_threshold || bin.threshold || 80;
-            return bin.fillLevel >= threshold;
-        })
-        .sort((a, b) => b.fillLevel - a.fillLevel)
-        .slice(0, 5);
+// Store previous queue state for smooth transitions
+let previousQueue = [];
 
-    if (queue.length === 0) {
-        container.innerHTML = '<div class="no-selection">No collections needed</div>';
+async function updateCollectionQueue() {
+    const container = document.getElementById('collectionQueue');
+    try {
+        const response = await fetch(`${API_BASE}/collection_queue`);
+        const data = await response.json();
+        if (data.status === 'success' && Array.isArray(data.collection_queue)) {
+            const newQueue = data.collection_queue;
+            if (newQueue.length === 0) {
+                smoothUpdateQueueContainer(container, [], 'No collections needed');
+                return;
+            }
+            smoothUpdateQueueContainer(container, newQueue);
+            previousQueue = [...newQueue]; // Store for next comparison
+        } else {
+            // Only show error, not 'No collections needed' for non-success cases
+            smoothUpdateQueueContainer(container, [], 'Error loading queue');
+        }
+    } catch (err) {
+        smoothUpdateQueueContainer(container, [], 'Error loading queue');
+        console.error('Error fetching collection queue:', err);
+    }
+}
+
+function smoothUpdateQueueContainer(container, newQueue, emptyMessage = null) {
+    if (emptyMessage) {
+        // Fade out existing items and show message
+        const existingCards = container.querySelectorAll('.item-card');
+        existingCards.forEach((card, index) => {
+            setTimeout(() => {
+                card.style.opacity = '0';
+                card.style.transform = 'translateX(-20px)';
+                setTimeout(() => card.remove(), 200);
+            }, index * 50);
+        });
+        
+        setTimeout(() => {
+            container.innerHTML = `<div class="no-selection">${emptyMessage}</div>`;
+        }, existingCards.length * 50 + 200);
         return;
     }
 
-    queue.forEach(bin => {
-        const card = document.createElement('div');
-        card.className = `item-card ${getStatusClass(bin.fillLevel)}`;
-        card.innerHTML = `
-            <div class="item-header">
-                <span class="item-id">${bin.id}</span>
-                <span class="item-status">${bin.fillLevel.toFixed(1)}%</span>
-            </div>
-            <div class="item-details">
-                Priority: ${bin.fillLevel >= 90 ? 'HIGH' : 'MEDIUM'}
-            </div>
-        `;
-        container.appendChild(card);
+    // If there was a "no-selection" message shown previously, remove it before
+    // rendering real queue items so the message doesn't appear alongside cards.
+    const noSelectionEl = container.querySelector('.no-selection');
+    if (noSelectionEl) {
+        // Fade it out for consistency with other animations
+        noSelectionEl.style.opacity = '0';
+        noSelectionEl.style.transform = 'translateX(-10px)';
+        setTimeout(() => {
+            if (noSelectionEl.parentNode) noSelectionEl.remove();
+        }, 200);
+    }
+
+    const existingCards = new Map();
+    container.querySelectorAll('.item-card').forEach(card => {
+        const binId = card.querySelector('.item-id').textContent;
+        existingCards.set(binId, card);
     });
+
+    const newBinIds = new Set(newQueue.map(bin => bin.id));
+    
+    // Remove bins no longer in queue with fade animation
+    existingCards.forEach((card, binId) => {
+        if (!newBinIds.has(binId)) {
+            card.style.opacity = '0';
+            card.style.transform = 'translateX(-20px)';
+            setTimeout(() => card.remove(), 200);
+        }
+    });
+
+    // Add or update bins
+    newQueue.forEach((bin, index) => {
+        const existingCard = existingCards.get(bin.id);
+        
+        if (existingCard) {
+            // Update existing card smoothly
+            updateExistingQueueCard(existingCard, bin);
+        } else {
+            // Create new card with slide-in animation
+            const card = createQueueCard(bin);
+            card.style.opacity = '0';
+            card.style.transform = 'translateX(20px)';
+            
+            // Insert at correct position
+            const nextCard = container.children[index];
+            if (nextCard && nextCard.classList.contains('item-card')) {
+                container.insertBefore(card, nextCard);
+            } else {
+                container.appendChild(card);
+            }
+            
+            // Animate in
+            setTimeout(() => {
+                card.style.opacity = '1';
+                card.style.transform = 'translateX(0)';
+            }, 50);
+        }
+    });
+}
+
+function createQueueCard(bin) {
+    const card = document.createElement('div');
+    card.className = `item-card ${getStatusClass(bin.fillLevel)}`;
+    card.innerHTML = `
+        <div class="item-header">
+            <span class="item-id">${bin.id}</span>
+            <span class="item-status">${bin.fillLevel.toFixed(1)}%</span>
+        </div>
+        <div class="item-details">
+            Priority: ${bin.fillLevel >= 90 ? 'HIGH' : 'MEDIUM'}
+        </div>
+    `;
+    return card;
+}
+
+function updateExistingQueueCard(card, bin) {
+    // Smoothly update fill level
+    const statusSpan = card.querySelector('.item-status');
+    const currentFill = parseFloat(statusSpan.textContent);
+    const targetFill = bin.fillLevel;
+    
+    // Animate fill level change
+    if (Math.abs(currentFill - targetFill) > 0.1) {
+        animateValue(statusSpan, currentFill, targetFill, 500, (value) => `${value.toFixed(1)}%`);
+    }
+    
+    // Update card class for status color
+    const newStatusClass = getStatusClass(bin.fillLevel);
+    card.className = `item-card ${newStatusClass}`;
+    
+    // Update priority text
+    const priorityText = bin.fillLevel >= 90 ? 'HIGH' : 'MEDIUM';
+    const detailsDiv = card.querySelector('.item-details');
+    detailsDiv.textContent = `Priority: ${priorityText}`;
+}
+
+function animateValue(element, start, end, duration, formatter) {
+    const startTime = performance.now();
+    
+    function update(currentTime) {
+        const elapsed = currentTime - startTime;
+        const progress = Math.min(elapsed / duration, 1);
+        
+        // Use easeOutCubic for smooth deceleration
+        const eased = 1 - Math.pow(1 - progress, 3);
+        const currentValue = start + (end - start) * eased;
+        
+        element.textContent = formatter(currentValue);
+        
+        if (progress < 1) {
+            requestAnimationFrame(update);
+        }
+    }
+    
+    requestAnimationFrame(update);
+}
+
+function updateBinMarkerStyle(bin, processedClusters) {
+    const config = ITEM_CONFIGS.bin;
+    const fillColor = config.getStatusColor(bin);
+    let borderColor = '#fff';
+    let borderWidth = '2px';
+
+    // Find if bin is in a cluster
+    processedClusters.forEach((clusterInfo) => {
+        if (clusterInfo.bins.includes(bin.id)) {
+            borderColor = clusterInfo.color;
+            borderWidth = '4px';
+        }
+    });
+
+    // Get existing marker element or create if needed
+    const markerElement = bin.marker._icon;
+    if (markerElement) {
+        const binDiv = markerElement.querySelector('.bin-marker-content') || markerElement.querySelector('div');
+        if (binDiv) {
+            // Smoothly update styles using CSS transitions
+            binDiv.style.background = fillColor;
+            binDiv.style.borderColor = borderColor;
+            binDiv.style.borderWidth = borderWidth;
+        }
+    } else {
+        // Create new icon if marker doesn't exist yet
+        const icon = L.divIcon({
+            className: 'bin-icon',
+            html: `<div class="bin-marker-content" style="background: ${fillColor}; width: ${config.size[0]}px; height: ${config.size[1]}px; border-radius: 50%; border: ${borderWidth} solid ${borderColor}; box-shadow: 0 2px 6px rgba(0,0,0,0.3); display: flex; align-items: center; justify-content: center; color: white; font-size: 14px; transition: all 0.3s ease;">${config.icon}</div>`,
+            iconSize: config.size,
+            iconAnchor: [config.size[0] / 2, config.size[1] / 2]
+        });
+        bin.marker.setIcon(icon);
+    }
 }
 
 function getStatusClass(fillLevel) {
@@ -1390,19 +1564,19 @@ function updateSimulationTime() {
     displayedSimulationTime = lerp(displayedSimulationTime, simulationTime, 0.2);
     const timeString = formatSimTime(displayedSimulationTime, true);
     const timeStringHM = formatSimTime(displayedSimulationTime, false);
-    
+
     // Update main simulation time display (map overlay)
     const timeElement = document.getElementById('simulationTime');
     if (timeElement) {
         timeElement.textContent = timeString;
     }
-    
+
     // Also update traffic time display (sidebar)
     const trafficTimeElement = document.getElementById('trafficTime');
     if (trafficTimeElement) {
         trafficTimeElement.textContent = timeStringHM;
     }
-    
+
     // Fetch traffic info from backend instead of calculating locally
     fetchTrafficInfoFromBackend(simulationTime);
 }
@@ -1413,7 +1587,7 @@ function debugTimeDisplay() {
     const trafficElement = document.getElementById('trafficTime');
     const trafficLevelElement = document.getElementById('trafficLevel');
     const trafficDensityElement = document.getElementById('trafficDensity');
-    
+
     console.log('=== TIME & TRAFFIC DISPLAY DEBUG ===');
     console.log('Main simulationTime element:', simulationElement);
     console.log('Current simulationTime textContent:', simulationElement?.textContent);
@@ -1424,7 +1598,7 @@ function debugTimeDisplay() {
     console.log('simulationTime variable:', simulationTime);
     console.log('simulationStartHour variable:', simulationStartHour);
     console.log('displayedSimulationTime variable:', displayedSimulationTime);
-    
+
     // Force update
     updateSimulationTime();
     console.log('After forced update:');
@@ -1456,7 +1630,7 @@ function generateModalContent(item, type) {
         const value = item[field] !== undefined ? item[field] : config.defaultValues[field];
         const inputType = typeof value === 'number' ? 'number' : 'text';
         const step = field.includes('Rate') || field.includes('Level') ? '0.1' : '1';
-        
+
         html += `
             <div class="form-group">
                 <label>${field.charAt(0).toUpperCase() + field.slice(1)}:</label>
@@ -1546,22 +1720,22 @@ async function saveCurrentSystem() {
                 isRunning: isSimulationRunning
             }
         };
-        
+
         const response = await fetch(`${API_BASE}/save_system`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(systemState)
         });
-        
+
         const data = await response.json();
-        
+
         if (data.status === 'success') {
             showNotification(`System saved as: ${data.filename}`, 'success');
             loadSavedFilesList();
         } else {
             throw new Error(data.message);
         }
-        
+
     } catch (error) {
         showNotification(`Save failed: ${error.message}`, 'error');
     }
@@ -1578,7 +1752,7 @@ function handleFileLoad(event) {
     const file = event.target.files[0];
     if (!file) return;
     const reader = new FileReader();
-    reader.onload = function(e) {
+    reader.onload = function (e) {
         try {
             const systemState = JSON.parse(e.target.result);
             loadSystemFromState(systemState);
@@ -1660,7 +1834,7 @@ async function syncLoadedDataWithBackend() {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ bins, trucks, depots })
         });
-        
+
         console.log('✅ Backend sync complete');
     } catch (error) {
         console.error('⚠ Backend sync failed:', error);
@@ -1669,8 +1843,8 @@ async function syncLoadedDataWithBackend() {
 
 function clearAllItems() {
     ['bins', 'trucks', 'depots'].forEach(itemType => {
-    items[itemType].forEach(item => map.removeLayer(item.marker));
-    items[itemType].length = 0;
+        items[itemType].forEach(item => map.removeLayer(item.marker));
+        items[itemType].length = 0;
     });
     routePolylines.forEach(polyline => {
         if (map.hasLayer(polyline)) map.removeLayer(polyline);
@@ -1690,9 +1864,9 @@ async function loadSavedFilesList() {
     try {
         const response = await fetch(`${API_BASE}/saved_files`);
         const data = await response.json();
-            if (data.status === 'success') {
-                updateFilesListUI(data.files);
-            }
+        if (data.status === 'success') {
+            updateFilesListUI(data.files);
+        }
     } catch (error) {
         console.error('⚠ Failed to load files list:', error);
     }
@@ -1731,7 +1905,7 @@ async function loadSavedFile(filename) {
 
 function formatFileDate(dateString) {
     const date = new Date(dateString);
-    return date.toLocaleDateString() + ' ' + date.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
+    return date.toLocaleDateString() + ' ' + date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 }
 
 function formatFileSize(bytes) {
@@ -1784,16 +1958,16 @@ function updateTrafficDisplay(trafficInfo) {
 function updateWaitingTrucks() {
     const waitingContainer = document.getElementById('waitingTrucks');
     const waitingTrucks = items.trucks.filter(t => t.status === 'waiting');
-    
+
     if (waitingTrucks.length === 0) {
         waitingContainer.classList.remove('active');
         waitingContainer.innerHTML = '';
         return;
     }
-    
+
     waitingContainer.classList.add('active');
     let html = '<strong>Waiting Trucks:</strong>';
-    
+
     waitingTrucks.forEach(truck => {
         const waitRemaining = getWaitRemainingMinutes(truck.waitingUntil, simulationTime);
         html += `
@@ -1802,7 +1976,7 @@ function updateWaitingTrucks() {
             </div>
         `;
     });
-    
+
     waitingContainer.innerHTML = html;
 }
 
@@ -1813,17 +1987,17 @@ let schedules = [];
 function initializeScheduling() {
     // Schedule dispatch button
     document.getElementById('scheduleDispatchBtn').addEventListener('click', openScheduleModal);
-    
+
     // View schedules button
     document.getElementById('viewSchedulesBtn').addEventListener('click', openSchedulesViewModal);
-    
+
     // Schedule modal controls
     document.getElementById('scheduleModalClose').addEventListener('click', closeScheduleModal);
     document.getElementById('cancelScheduleBtn').addEventListener('click', closeScheduleModal);
     document.getElementById('createScheduleBtn').addEventListener('click', createSchedule);
-    
+
     // Recurrence dropdown change handler
-    document.getElementById('scheduleRecurrence').addEventListener('change', function() {
+    document.getElementById('scheduleRecurrence').addEventListener('change', function () {
         const maxOccurrencesGroup = document.getElementById('maxOccurrencesGroup');
         if (this.value === 'daily') {
             maxOccurrencesGroup.style.display = 'block';
@@ -1831,16 +2005,16 @@ function initializeScheduling() {
             maxOccurrencesGroup.style.display = 'none';
         }
     });
-    
+
     // Schedules view modal controls
     document.getElementById('schedulesViewModalClose').addEventListener('click', closeSchedulesViewModal);
     document.getElementById('closeSchedulesViewBtn').addEventListener('click', closeSchedulesViewModal);
-    
+
     // Close modals when clicking outside
-    window.addEventListener('click', function(event) {
+    window.addEventListener('click', function (event) {
         const scheduleModal = document.getElementById('scheduleModal');
         const schedulesViewModal = document.getElementById('schedulesViewModal');
-        
+
         if (event.target === scheduleModal) {
             closeScheduleModal();
         }
@@ -1848,7 +2022,7 @@ function initializeScheduling() {
             closeSchedulesViewModal();
         }
     });
-    
+
     // Load existing schedules
     loadSchedules();
 }
@@ -1857,7 +2031,7 @@ async function loadSchedules() {
     try {
         const response = await fetch(`${API_BASE}/schedules`);
         const data = await response.json();
-        
+
         if (data.status === 'success') {
             schedules = data.schedules;
             console.log('🟢 Schedules loaded from backend:', schedules);
@@ -1872,7 +2046,7 @@ async function loadSchedules() {
 
 function openScheduleModal() {
     const modal = document.getElementById('scheduleModal');
-    
+
     // Populate truck dropdown
     const truckSelect = document.getElementById('scheduleTruck');
     truckSelect.innerHTML = '<option value="">Choose a truck...</option>';
@@ -1882,7 +2056,7 @@ function openScheduleModal() {
         option.textContent = `${truck.id} (${truck.status})`;
         truckSelect.appendChild(option);
     });
-    
+
     // Populate depot dropdown
     const depotSelect = document.getElementById('scheduleDepot');
     depotSelect.innerHTML = '<option value="">Choose a depot...</option>';
@@ -1892,7 +2066,7 @@ function openScheduleModal() {
         option.textContent = depot.name || depot.id;
         depotSelect.appendChild(option);
     });
-    
+
     // Populate bins checkboxes
     const binsContainer = document.getElementById('scheduleBins');
     binsContainer.innerHTML = '';
@@ -1905,10 +2079,10 @@ function openScheduleModal() {
         `;
         binsContainer.appendChild(checkboxItem);
     });
-    
+
     // Reset form
     document.getElementById('scheduleForm').reset();
-    
+
     modal.style.display = 'block';
 }
 
@@ -1926,14 +2100,14 @@ async function createSchedule() {
         const reason = document.getElementById('scheduleReason').value.trim();
         const recurrenceType = document.getElementById('scheduleRecurrence').value;
         const maxOccurrences = document.getElementById('scheduleMaxOccurrences').value;
-        
+
         // Get selected bins
         const selectedBins = [];
         const checkboxes = document.querySelectorAll('#scheduleBins input[type="checkbox"]:checked');
         checkboxes.forEach(checkbox => {
             selectedBins.push(checkbox.value);
         });
-        
+
         // Validation
         if (!truckId) {
             alert('Please select a truck');
@@ -1947,7 +2121,7 @@ async function createSchedule() {
             alert('Please select at least one bin');
             return;
         }
-        
+
         // Create schedule data
         const scheduleData = {
             truck_id: truckId,
@@ -1960,26 +2134,26 @@ async function createSchedule() {
             recurrence_type: recurrenceType,
             recurrence_interval: 24 // Always 24 hours for daily
         };
-        
+
         // Add max occurrences if specified and recurrence is daily
         if (recurrenceType === 'daily' && maxOccurrences && maxOccurrences.trim() !== '') {
             scheduleData.max_occurrences = parseInt(maxOccurrences);
         }
-        
+
         // Send to backend
         const response = await fetch(`${API_BASE}/schedules`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(scheduleData)
         });
-        
+
         const data = await response.json();
-        
+
         if (data.status === 'success') {
             console.log('✅ Schedule created successfully');
             closeScheduleModal();
             loadSchedules(); // Reload schedules
-            
+
             if (recurrenceType === 'daily') {
                 alert(`Daily recurring schedule created successfully! Will execute ${maxOccurrences ? maxOccurrences + ' times' : 'indefinitely'}.`);
             } else {
@@ -1988,7 +2162,7 @@ async function createSchedule() {
         } else {
             alert(`Failed to create schedule: ${data.message}`);
         }
-        
+
     } catch (error) {
         console.error('Error creating schedule:', error);
         alert('Error creating schedule. Please try again.');
@@ -1998,9 +2172,9 @@ async function createSchedule() {
 async function openSchedulesViewModal() {
     const modal = document.getElementById('schedulesViewModal');
     await loadSchedules(); // Refresh schedules
-    
+
     const content = document.getElementById('schedulesViewContent');
-    
+
     if (schedules.length === 0) {
         content.innerHTML = '<div class="no-schedules">No schedules found</div>';
     } else {
@@ -2009,10 +2183,10 @@ async function openSchedulesViewModal() {
             const statusClass = schedule.status;
             const timeDisplay = `${schedule.scheduled_hour.toString().padStart(2, '0')}:${schedule.scheduled_minute.toString().padStart(2, '0')}`;
             const recurrenceDisplay = schedule.recurrence_type === 'daily' ? 'Daily' : 'One-time';
-            const executionInfo = schedule.recurrence_type === 'daily' 
+            const executionInfo = schedule.recurrence_type === 'daily'
                 ? `(${schedule.total_executions || 0}/${schedule.max_occurrences || '∞'} executions)`
                 : '';
-            
+
             html += `
                 <div class="schedule-view-item">
                     <div class="schedule-view-header">
@@ -2025,10 +2199,10 @@ async function openSchedulesViewModal() {
                         <div><strong>Area:</strong> ${schedule.area_name}</div>
                         <div><strong>Reason:</strong> ${schedule.reason}</div>
                         <div><strong>Recurrence:</strong> ${recurrenceDisplay} ${executionInfo}</div>
-                        ${schedule.next_execution_time && schedule.recurrence_type === 'daily' && schedule.status === 'pending' 
-                            ? `<div><strong>Next Execution:</strong> ${formatNextExecutionTime(schedule.next_execution_time)}</div>`
-                            : ''
-                        }
+                        ${schedule.next_execution_time && schedule.recurrence_type === 'daily' && schedule.status === 'pending'
+                    ? `<div><strong>Next Execution:</strong> ${formatNextExecutionTime(schedule.next_execution_time)}</div>`
+                    : ''
+                }
                     </div>
                     <div class="schedule-view-bins">
                         <strong>Target Bins:</strong> ${schedule.target_bin_ids.join(', ')}
@@ -2043,7 +2217,7 @@ async function openSchedulesViewModal() {
         });
         content.innerHTML = html;
     }
-    
+
     modal.style.display = 'block';
 }
 
@@ -2055,14 +2229,14 @@ async function deleteSchedule(scheduleId) {
     if (!confirm('Are you sure you want to delete this schedule?')) {
         return;
     }
-    
+
     try {
         const response = await fetch(`${API_BASE}/schedules/${scheduleId}`, {
             method: 'DELETE'
         });
-        
+
         const data = await response.json();
-        
+
         if (data.status === 'success') {
             console.log('✅ Schedule deleted successfully');
             loadSchedules();
@@ -2070,7 +2244,7 @@ async function deleteSchedule(scheduleId) {
         } else {
             alert(`Failed to delete schedule: ${data.message}`);
         }
-        
+
     } catch (error) {
         console.error('Error deleting schedule:', error);
         alert('Error deleting schedule. Please try again.');
@@ -2086,7 +2260,7 @@ function updateSchedulesDisplay() {
     // Update sidebar schedules summary
     const activeSchedules = schedules.filter(s => s.status === 'pending').length;
     document.getElementById('activeSchedules').textContent = activeSchedules;
-    
+
     // Find next dispatch
     const pendingSchedules = schedules.filter(s => s.status === 'pending');
     if (pendingSchedules.length > 0) {
@@ -2096,7 +2270,7 @@ function updateSchedulesDisplay() {
             const timeB = b.next_execution_time || b.scheduled_time;
             return timeA - timeB;
         });
-        
+
         const next = pendingSchedules[0];
         const nextExecutionTime = next.next_execution_time || next.scheduled_time;
         const timeDisplay = formatNextExecutionTime(nextExecutionTime);
@@ -2104,7 +2278,7 @@ function updateSchedulesDisplay() {
     } else {
         document.getElementById('nextDispatch').textContent = 'None';
     }
-    
+
     // Update schedules list in sidebar
     const schedulesList = document.getElementById('schedulesList');
     if (activeSchedules === 0) {
@@ -2112,28 +2286,28 @@ function updateSchedulesDisplay() {
     } else {
         let html = '';
         const activeSched = schedules.filter(s => s.status === 'pending').slice(0, 3); // Show first 3
-        
+
         activeSched.forEach(schedule => {
             const nextExecutionTime = schedule.next_execution_time || schedule.scheduled_time;
             const timeDisplay = formatNextExecutionTime(nextExecutionTime);
             const recurrenceIcon = schedule.recurrence_type === 'daily' ? '🔄' : '📅';
-            
+
             html += `
                 <div class="schedule-item ${schedule.status}">
                     <div class="schedule-time">${recurrenceIcon} ${timeDisplay}</div>
                     <div class="schedule-details">${schedule.truck_id} → ${schedule.area_name}</div>
-                    ${schedule.recurrence_type === 'daily' 
-                        ? `<div class="schedule-details">Daily (${schedule.total_executions || 0}/${schedule.max_occurrences || '∞'})</div>`
-                        : ''
-                    }
+                    ${schedule.recurrence_type === 'daily'
+                    ? `<div class="schedule-details">Daily (${schedule.total_executions || 0}/${schedule.max_occurrences || '∞'})</div>`
+                    : ''
+                }
                 </div>
             `;
         });
-        
+
         if (activeSchedules > 3) {
             html += `<div class="schedule-item"><div class="schedule-details">+${activeSchedules - 3} more schedules</div></div>`;
         }
-        
+
         schedulesList.innerHTML = html;
     }
 }

@@ -365,12 +365,16 @@ class WasteCollectionAgent:
                     return False
                 return ((current_time - last) / 60) < 30
 
-            # Filter candidates
-            candidates = [
-                b for b in bins
-                if not recently_collected(b)
-                and b.get('fillLevel', 0) >= 15
-            ]
+            # Filter candidates - only include bins that need collection (above threshold)
+            candidates = []
+            for b in bins:
+                if recently_collected(b):
+                    continue
+                fill = b.get('fillLevel', 0)
+                threshold = b.get('dynamic_threshold', b.get('threshold', 80))
+                # Only include bins that are above their threshold or critically full
+                if fill >= threshold or fill >= 90:
+                    candidates.append(b)
 
             # Compute priority tuple
             def priority_tuple(b: Dict):

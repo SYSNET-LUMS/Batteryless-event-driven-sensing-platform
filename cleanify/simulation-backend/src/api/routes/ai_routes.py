@@ -238,3 +238,22 @@ def update_truck_assignment():
         
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
+
+@bp.route('/collection_queue', methods=['GET'])
+def get_collection_queue():
+    """Get current collection queue from agent"""
+    try:
+        agent = get_agent()
+        if not agent:
+            return jsonify({"status": "error", "message": "Agent not available"}), 400
+        # Return full bin objects for frontend display
+        repo = current_app.system_repository
+        all_bins = {b['id']: b for b in repo.get_bins()}
+        queue_ids = agent.collection_queue if hasattr(agent, 'collection_queue') else []
+        queue_bins = [all_bins.get(bin_id, {"id": bin_id, "fillLevel": 0}) for bin_id in queue_ids]
+        return jsonify({
+            "status": "success",
+            "collection_queue": queue_bins
+        })
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500        
