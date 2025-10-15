@@ -1437,7 +1437,7 @@ async function updateCollectionQueue() {
 
 function smoothUpdateQueueContainer(container, newQueue, emptyMessage = null) {
     if (emptyMessage) {
-        // Fade out existing items and show message
+        // Fade out existing items and show nothing (no message)
         const existingCards = container.querySelectorAll('.item-card');
         existingCards.forEach((card, index) => {
             setTimeout(() => {
@@ -1446,9 +1446,8 @@ function smoothUpdateQueueContainer(container, newQueue, emptyMessage = null) {
                 setTimeout(() => card.remove(), 200);
             }, index * 50);
         });
-        
         setTimeout(() => {
-            container.innerHTML = `<div class="no-selection">${emptyMessage}</div>`;
+            container.innerHTML = "";
         }, existingCards.length * 50 + 200);
         return;
     }
