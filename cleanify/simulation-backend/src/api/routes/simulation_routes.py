@@ -7,7 +7,7 @@ import math
 
 bp = Blueprint('simulation', __name__, url_prefix='/api')
 
-def update_truck_simulation_state(truck: dict, time_delta_seconds: float, repo) -> dict:
+def update_truck_simulation_state(truck: dict, time_delta_seconds: float, repo, agent=None) -> dict:
     """
     Update truck position and route progress based on simulation time and truck speed
     
@@ -84,6 +84,14 @@ def update_truck_simulation_state(truck: dict, time_delta_seconds: float, repo) 
             truck['distance_to_next'] = 0
             truck['current_route'] = {}
             print(f"✅ Truck {truck['id']} completed route and returned to depot")
+            
+            # Cleanup: Update proactive dispatch tracking to remove stale assignments
+            if agent:
+                try:
+                    agent.update_truck_assignment_status(truck['id'], 'completed_route')
+                    print(f"🧹 Cleaned up assignments for truck {truck['id']}")
+                except Exception as e:
+                    print(f"⚠️ Error cleaning up truck assignment for {truck['id']}: {e}")
         
         return truck
         
@@ -230,8 +238,8 @@ def simulation_step():
         trucks = repo.get_trucks()
         for truck in trucks:
             try:
-                if truck.get('status') in ['traveling', 'on_route', 'collecting']:
-                    truck_updated = update_truck_simulation_state(truck, time_delta, repo)
+                if truck.get('status') in ['traveling', 'on_route', 'collecting', 'returning']:
+                    truck_updated = update_truck_simulation_state(truck, time_delta, repo, agent)
                     if truck_updated:
                         repo.update_truck(truck['id'], truck_updated)
             except Exception as e:
@@ -263,6 +271,11 @@ def simulation_step():
                 for bin_data in cluster_bins:
                     clusters_data[bin_data['id']] = [b['id'] for b in cluster_bins]
         
+        # Get current collection queue from agent
+        collection_queue_ids = []
+        if agent and hasattr(agent, 'collection_queue'):
+            collection_queue_ids = list(agent.collection_queue)
+        
         return jsonify({
             "status": "success",
             "bins": repo.get_bins(),
@@ -273,6 +286,7 @@ def simulation_step():
             "reserved_bins": list(agent.reserved_bins) if agent else [],
             "waiting_assignments": len(agent.waiting_assignments) if agent else 0,
             "schedule_dispatches": schedule_dispatches,
+            "collection_queue": collection_queue_ids,
             "message": f"Simulation step completed ({time_delta}s)"
         })
         

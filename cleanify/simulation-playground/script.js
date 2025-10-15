@@ -504,6 +504,8 @@ function moveItemStraightLine(truck, target) {
             truck.currentLoad = 0;
             truck.targetDepot = null;
             console.log(`🏭 ${truck.id} returned to depot and unloaded`);
+            // Notify backend that truck completed its route and is now available
+            updateTruckAssignmentStatus(truck.id, 'completed_route');
         } else {
             truck.status = 'collecting';
         }
@@ -901,6 +903,13 @@ function updateTruck(truck) {
                     truck.targetDepot = depot;
                     getTruckReturnRoute(truck, depot);
                 }
+            } else {
+                // Truck is truly idle with no load - ensure backend knows it's available
+                // This handles edge cases where status wasn't properly synchronized
+                if (!truck._idleNotified) {
+                    updateTruckAssignmentStatus(truck.id, 'available');
+                    truck._idleNotified = true;
+                }
             }
             break;
     }
@@ -1192,6 +1201,12 @@ async function callBackendSimulationStep(timeDelta) {
                     await handleScheduledDispatchFromBackend(dispatch);
                 }
             }
+
+            // Store the backend collection queue for UI synchronization
+            window.backendCollectionQueue = data.collection_queue || [];
+            
+            // Update the collection queue UI immediately with backend data
+            updateCollectionQueueFromBackend();
         }
     } catch (error) {
         console.error('Backend simulation step failed:', error);
@@ -1291,12 +1306,24 @@ function updateItemsList() {
 function updateBinsList() {
     const container = document.getElementById('binsList');
     container.innerHTML = '';
+    
+    // Get backend collection queue for visual indicators
+    const backendQueue = window.backendCollectionQueue || [];
+    const queueSet = new Set(backendQueue);
+    
     items.bins.forEach(bin => {
         const dynamicThreshold = bin.dynamic_threshold || bin.threshold || 80;
         const staticThreshold = bin.threshold || 80;
         const isTargeted = items.trucks.some(truck => truck.targetBin === bin);
-        const statusText = isTargeted ? 'TARGETED' :
+        const inQueue = queueSet.has(bin.id);
+        
+        // Enhanced status with queue indicator
+        let statusText = isTargeted ? 'TARGETED' :
             bin.fillLevel >= dynamicThreshold ? 'NEEDS COLLECTION' : 'OK';
+        
+        if (inQueue && !isTargeted) {
+            statusText = '📋 IN QUEUE';
+        }
 
         // Show both thresholds if they differ
         const thresholdText = Math.abs(dynamicThreshold - staticThreshold) > 0.1
@@ -1304,7 +1331,11 @@ function updateBinsList() {
             : `T: ${staticThreshold}%`;
 
         const card = document.createElement('div');
-        card.className = `item-card ${getStatusClass(bin.fillLevel)}`;
+        let cardClass = `item-card ${getStatusClass(bin.fillLevel)}`;
+        if (inQueue) {
+            cardClass += ' in-queue';
+        }
+        card.className = cardClass;
         card.innerHTML = `
             <div class="item-header">
                 <span class="item-id">${bin.id}</span>
@@ -1359,6 +1390,28 @@ function updateTrucksList() {
 // Store previous queue state for smooth transitions
 let previousQueue = [];
 
+// New function: Update collection queue using backend data from simulation step
+function updateCollectionQueueFromBackend() {
+    const container = document.getElementById('collectionQueue');
+    
+    // Use backend queue stored from simulation_step response
+    const queueIds = window.backendCollectionQueue || [];
+    
+    if (queueIds.length === 0) {
+        smoothUpdateQueueContainer(container, [], 'No collections needed');
+        return;
+    }
+    
+    // Map queue IDs to full bin objects
+    const queueBins = queueIds
+        .map(binId => items.bins.find(b => b.id === binId))
+        .filter(bin => bin !== undefined);
+    
+    smoothUpdateQueueContainer(container, queueBins);
+    previousQueue = [...queueBins];
+}
+
+// Legacy function: Fetch collection queue from dedicated endpoint (fallback)
 async function updateCollectionQueue() {
     const container = document.getElementById('collectionQueue');
     try {

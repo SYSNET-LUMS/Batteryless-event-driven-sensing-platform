@@ -298,6 +298,7 @@ body {
     border-left: 4px solid #3498db;
     cursor: pointer;
     transition: all 0.3s ease, opacity 0.2s ease, transform 0.2s ease;
+    position: relative;
 }
 
 .item-card:hover {
@@ -315,6 +316,22 @@ body {
 
 .item-card.normal {
     border-left-color: #27ae60;
+}
+
+/* Visual indicator for bins in backend collection queue */
+.item-card.in-queue {
+    background: linear-gradient(90deg, #3498db22 0%, #34495e 20%);
+    border-left-width: 6px;
+    box-shadow: 0 0 8px rgba(52, 152, 219, 0.3);
+}
+
+.item-card.in-queue::before {
+    content: '📋';
+    position: absolute;
+    right: 8px;
+    top: 8px;
+    font-size: 1.2rem;
+    opacity: 0.7;
 }
 
 .item-header {

@@ -328,8 +328,8 @@ class ProactiveClusterDispatchService:
         for truck_id, update_info in truck_updates.items():
             status = update_info.get('status')
             
-            if status == 'completed_route':
-                # Remove completed assignments
+            if status in ['completed_route', 'available', 'idle']:
+                # Remove completed/idle assignments to allow truck reassignment
                 clusters_to_remove = []
                 for cluster_id, assignment in self.active_cluster_assignments.items():
                     if assignment['truck_id'] == truck_id:
@@ -337,6 +337,7 @@ class ProactiveClusterDispatchService:
                 
                 for cluster_id in clusters_to_remove:
                     del self.active_cluster_assignments[cluster_id]
+                    logger.info(f"🧹 Cleared assignment for truck {truck_id} (cluster {cluster_id}) - status: {status}")
                     
             elif status == 'route_started':
                 # Track truck assignment to clusters to prevent duplicates
