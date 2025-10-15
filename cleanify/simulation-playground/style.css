@@ -325,15 +325,6 @@ body {
     box-shadow: 0 0 8px rgba(52, 152, 219, 0.3);
 }
 
-.item-card.in-queue::before {
-    content: '📋';
-    position: absolute;
-    right: 8px;
-    top: 8px;
-    font-size: 1.2rem;
-    opacity: 0.7;
-}
-
 .item-header {
     display: flex;
     justify-content: space-between;

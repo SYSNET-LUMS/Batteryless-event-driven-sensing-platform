@@ -1252,7 +1252,7 @@ async function updateTruckAssignmentStatus(truckId, status, assignedBins = []) {
         });
         const data = await response.json();
         if (data.status === 'success') {
-            console.log(`📋 Updated truck ${truckId} status to ${status}`);
+            console.log(`Updated truck ${truckId} status to ${status}`);
         } else {
             console.warn(`❌ Failed to update truck ${truckId} status:`, data.message || data);
         }
@@ -1322,7 +1322,7 @@ function updateBinsList() {
             bin.fillLevel >= dynamicThreshold ? 'NEEDS COLLECTION' : 'OK';
         
         if (inQueue && !isTargeted) {
-            statusText = '📋 IN QUEUE';
+            statusText = 'IN QUEUE';
         }
 
         // Show both thresholds if they differ
