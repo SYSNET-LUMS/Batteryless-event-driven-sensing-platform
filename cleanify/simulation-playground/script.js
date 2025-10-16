@@ -937,6 +937,21 @@ async function performCollection(truck) {
     collectionsToday++;
 
     console.log(`✅ ${truck.id} collected ${bin.id} (${wasteAmount.toFixed(0)}L)`);
+    
+    // Notify backend that bin was collected (prevents duplicate dispatch)
+    try {
+        await fetch(`${API_BASE}/bins_collected`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                truck_id: truck.id,
+                collected_bin_ids: [bin.id],
+                simulation_time: simulationTime
+            })
+        });
+    } catch (error) {
+        console.error('Failed to notify backend of bin collection:', error);
+    }
 
     // If we already have a planned sequence of cluster bins, continue with it first
     if (Array.isArray(truck.clusterBins) && truck.clusterBins.length > 0) {

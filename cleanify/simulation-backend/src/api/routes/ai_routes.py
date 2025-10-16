@@ -240,6 +240,53 @@ def update_truck_assignment():
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
 
+@bp.route('/bins_collected', methods=['POST'])
+def bins_collected():
+    """
+    Notify backend that bins have been collected by a truck.
+    This updates the proactive dispatch tracking to prevent duplicate dispatches.
+    """
+    try:
+        agent = get_agent()
+        if not agent:
+            return jsonify({"status": "error", "message": "Agent not available"}), 400
+        
+        data = request.json or {}
+        truck_id = data.get('truck_id')
+        collected_bin_ids = data.get('collected_bin_ids', [])
+        simulation_time = data.get('simulation_time', 0)
+        
+        if not truck_id or not collected_bin_ids:
+            return jsonify({"status": "error", "message": "truck_id and collected_bin_ids required"}), 400
+        
+        # Remove collected bins from collection queue
+        if hasattr(agent, 'collection_queue'):
+            original_size = len(agent.collection_queue)
+            agent.collection_queue = [bid for bid in agent.collection_queue if bid not in collected_bin_ids]
+            removed_count = original_size - len(agent.collection_queue)
+            if removed_count > 0:
+                print(f"🗑️ Removed {removed_count} collected bins from queue: {collected_bin_ids}")
+        
+        # Update proactive dispatch to clear assignments for collected bins
+        if hasattr(agent, 'proactive_dispatch'):
+            repo = current_app.system_repository
+            all_bins = repo.get_bins() if hasattr(repo, 'get_bins') else []
+            
+            # Notify proactive dispatch service about collection
+            agent.proactive_dispatch.mark_bins_collected(
+                truck_id, collected_bin_ids, all_bins, simulation_time
+            )
+            print(f"✅ Truck {truck_id} collected bins: {collected_bin_ids}")
+        
+        return jsonify({
+            "status": "success",
+            "message": f"Marked {len(collected_bin_ids)} bins as collected by {truck_id}"
+        })
+        
+    except Exception as e:
+        print(f"⚠️ Error marking bins as collected: {e}")
+        return jsonify({"status": "error", "message": str(e)}), 500
+
 @bp.route('/collection_queue', methods=['GET'])
 def get_collection_queue():
     """Get current collection queue from agent"""

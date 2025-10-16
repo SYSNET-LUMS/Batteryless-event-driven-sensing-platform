@@ -476,3 +476,52 @@ class ProactiveClusterDispatchService:
         except Exception as e:
             logger.error(f"Error recommending queue updates: {e}")
             return {'additions': [], 'reason': f'Error: {e}'}
+    
+    def mark_bins_collected(self, truck_id: str, collected_bin_ids: List[str], 
+                           all_bins: List[Dict], current_time: float) -> None:
+        """
+        Mark bins as collected and clear cluster assignments.
+        
+        This prevents duplicate dispatches when a truck collects additional bins
+        from a cluster that weren't in the original route.
+        
+        Args:
+            truck_id: ID of truck that collected the bins
+            collected_bin_ids: List of bin IDs that were collected
+            all_bins: Full list of bins for cluster mapping
+            current_time: Current simulation time
+        """
+        try:
+            # Get clusters to identify which cluster(s) the collected bins belong to
+            if self.clustering_callback:
+                clusters = self.clustering_callback(all_bins)
+            else:
+                clusters = self.clustering_service.create_adaptive_clusters(all_bins)
+            
+            # Find cluster IDs for collected bins
+            collected_clusters = set()
+            for bin_id in collected_bin_ids:
+                cluster_id, _ = self._find_bin_cluster(bin_id, clusters)
+                if cluster_id is not None:
+                    cluster_key = str(cluster_id)
+                    collected_clusters.add(cluster_key)
+            
+            # Clear assignments for clusters that have been fully or partially collected
+            for cluster_key in collected_clusters:
+                if cluster_key in self.active_cluster_assignments:
+                    assignment = self.active_cluster_assignments[cluster_key]
+                    assigned_truck = assignment.get('truck_id')
+                    
+                    # Only clear if the truck matches (safety check)
+                    if assigned_truck == truck_id:
+                        logger.info(f"✅ Clearing cluster {cluster_key} assignment after collection by {truck_id}")
+                        del self.active_cluster_assignments[cluster_key]
+                    else:
+                        logger.warning(f"⚠️ Truck {truck_id} collected from cluster {cluster_key} "
+                                     f"but assigned truck was {assigned_truck}")
+            
+            logger.info(f"Marked {len(collected_bin_ids)} bins as collected by {truck_id}, "
+                       f"cleared {len(collected_clusters)} cluster assignments")
+            
+        except Exception as e:
+            logger.error(f"Error marking bins as collected: {e}")
