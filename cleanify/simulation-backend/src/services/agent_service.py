@@ -14,10 +14,16 @@ class WasteCollectionAgent:
     """Main coordination layer with VROOM-powered optimization and simple dynamic clustering"""
     
     def __init__(self, api_key: Optional[str] = None):
+        import traceback
         print(f"🏗️ Creating new WasteCollectionAgent instance - agent_id={id(self)}")
+        print(f"📍 Agent creation stack trace:")
+        for line in traceback.format_stack()[-5:-1]:
+            print(f"  {line.strip()}")
+        
         self.api_key = api_key
         self.bins_data = []
         self.depot_data = []  # Keep latest depots list for clustering
+        self.simulation_started = False  # Track if simulation has started
         
         # Initialize modular services with VROOM
         self.osrm_service = OSRMService()
@@ -205,40 +211,38 @@ class WasteCollectionAgent:
             }
     
     def get_clusters(self, bins_data: List[Dict], depot_data: Optional[List[Dict]] = None) -> Dict:
-        """Get cached clusters or create new ones using enhanced adaptive clustering"""
+        """
+        Get cached clusters - clusters are calculated ONCE at simulation start and never recalculated.
         
-        # Create a hash of bin positions (lat, lng, id) for cache validation
-        # Only recalculate clustering if bin positions/count change, not fill levels
-        positions_data = [(bin_data['id'], bin_data['lat'], bin_data['lng']) for bin_data in bins_data]
-        positions_hash = hash(tuple(sorted(positions_data)))
+        For filtered bin subsets, returns the full cached clusters (not recalculated).
+        The caller is responsible for filtering clusters if needed.
+        """
         
-        # Check if we need to recalculate clustering
-        need_recalculation = (
-            self.cached_clusters is None or 
-            len(bins_data) != self.cached_bin_count or
-            positions_hash != self.cached_bin_positions_hash
-        )
+        # If clusters are already cached, return them immediately (no recalculation)
+        if self.cached_clusters is not None:
+            return self.cached_clusters
         
-        if need_recalculation:
-            print(f"🔄 AGENT: Recalculating clusters: bins_changed={len(bins_data) != self.cached_bin_count}, "
-                  f"positions_changed={positions_hash != self.cached_bin_positions_hash}, "
-                  f"agent_id={id(self)}")
-            
-            # Use per-bin proximity clustering with full depot list if available
-            depots = depot_data if depot_data is not None else getattr(self, 'depot_data', None)
-            self.cached_clusters = self.clustering_service.create_simple_dynamic_clusters(bins_data, depots)
-            self.cached_bin_count = len(bins_data)
-            self.cached_bin_positions_hash = positions_hash
-            
-            # Log clustering results
-            logger.info(f"Created {len(self.cached_clusters)} clusters for {len(bins_data)} bins")
-            cluster_info = self.clustering_service.get_cluster_info(self.cached_clusters)
-            
-            for cluster_id, info in cluster_info.items():
-                quality = info.get('quality_metrics', {})
-                logger.debug(f"Cluster {cluster_id}: {info['bin_ids']} - {quality.get('quality_rating', 'unknown')} quality")
-                    
-        return self.cached_clusters or {}
+        # First time: calculate clusters with ALL bins
+        import traceback
+        print(f"🔄 AGENT: Calculating clusters for the FIRST TIME - agent_id={id(self)}")
+        print(f"📍 Cluster calculation triggered from:")
+        for line in traceback.format_stack()[-5:-1]:
+            print(f"  {line.strip()}")
+        
+        # Use per-bin proximity clustering with full depot list if available
+        depots = depot_data if depot_data is not None else getattr(self, 'depot_data', None)
+        self.cached_clusters = self.clustering_service.create_simple_dynamic_clusters(bins_data, depots)
+        self.cached_bin_count = len(bins_data)
+        
+        # Log clustering results
+        logger.info(f"✅ Created {len(self.cached_clusters)} clusters for {len(bins_data)} bins (will be reused for entire simulation)")
+        cluster_info = self.clustering_service.get_cluster_info(self.cached_clusters)
+        
+        for cluster_id, info in cluster_info.items():
+            quality = info.get('quality_metrics', {})
+            logger.debug(f"Cluster {cluster_id}: {info['bin_ids']} - {quality.get('quality_rating', 'unknown')} quality")
+                
+        return self.cached_clusters
     
     # Legacy method name for compatibility
     def get_or_create_clusters(self, bins_data: List[Dict]) -> Dict:
@@ -246,11 +250,19 @@ class WasteCollectionAgent:
         return self.get_clusters(bins_data)
     
     def invalidate_cluster_cache(self):
-        """Manually invalidate cluster cache - call when system configuration changes"""
-        print(f"🔄 AGENT: Manually invalidating cluster cache - agent_id={id(self)}")
+        """
+        Invalidate cluster cache - ONLY call when loading a new system or resetting simulation.
+        Do NOT call during active simulation.
+        """
+        import traceback
+        print(f"🔄 AGENT: Invalidating cluster cache (system load/reset) - agent_id={id(self)}")
+        print(f"📍 Cache invalidation called from:")
+        for line in traceback.format_stack()[-5:-1]:
+            print(f"  {line.strip()}")
+        
         self.cached_clusters = None
         self.cached_bin_count = 0
-        self.cached_bin_positions_hash = None
+        self.simulation_started = False  # Reset simulation state
     
     def calculate_dynamic_threshold(self, bin_data: Dict, simulation_time_seconds: float, 
                                    depot_data: Optional[Dict] = None) -> float:

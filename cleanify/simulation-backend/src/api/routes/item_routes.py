@@ -34,10 +34,9 @@ def add_item(item_type):
         
         if item_type == 'bin':
             item = repo.add_bin(data)
-            # Update agent bins and invalidate cluster cache
+            # Update agent bins data (clusters will be recalculated at next simulation start)
             agent = get_agent()
             agent.bins_data = repo.get_bins()
-            agent.invalidate_cluster_cache()
         elif item_type == 'truck':
             item = repo.add_truck(data)
         elif item_type == 'depot':
@@ -46,7 +45,6 @@ def add_item(item_type):
             agent = get_agent()
             agent.bins_data = repo.get_bins()
             agent.depot_data = repo.get_depots()
-            agent.invalidate_cluster_cache()
             print(f"✅ Using singleton agent for depot - agent_id={id(agent)}")
         
         return jsonify({"status": "success", item_type: item})
@@ -78,7 +76,8 @@ def update_item(item_type):
             if item:
                 agent = get_agent()
                 agent.bins_data = repo.get_bins()
-                agent.invalidate_cluster_cache()
+                # Note: Clusters are NOT recalculated during simulation
+                # Only fillLevel and dynamic properties change, not positions
         elif item_type == 'truck':
             item = repo.update_truck(item_id, data)
         elif item_type == 'depot':
@@ -86,7 +85,7 @@ def update_item(item_type):
             if item:
                 agent = get_agent()
                 agent.depot_data = repo.get_depots()
-                agent.invalidate_cluster_cache()
+                # Note: Depot updates during simulation don't trigger cluster recalculation
         
         if item:
             return jsonify({"status": "success", item_type: item})
@@ -120,7 +119,7 @@ def delete_item(item_type):
             if deleted_item:
                 agent = get_agent()
                 agent.bins_data = repo.get_bins()
-                agent.invalidate_cluster_cache()
+                # Note: Deleting during simulation doesn't recalculate clusters
         elif item_type == 'truck':
             deleted_item = repo.delete_truck(item_id)
         elif item_type == 'depot':
@@ -128,7 +127,7 @@ def delete_item(item_type):
             if deleted_item:
                 agent = get_agent()
                 agent.depot_data = repo.get_depots()
-                agent.invalidate_cluster_cache()
+                # Note: Deleting during simulation doesn't recalculate clusters
         
         if deleted_item:
             return jsonify({

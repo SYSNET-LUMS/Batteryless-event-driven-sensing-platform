@@ -128,6 +128,15 @@ def start_simulation():
         agent.bins_data = repo.get_bins()
         agent.depot_data = repo.get_depots()
         
+        # Initialize clusters once at simulation start
+        print("🔄 Initializing clusters at simulation start...")
+        clusters = agent.get_clusters(agent.bins_data, agent.depot_data)
+        print(f"✅ Clusters initialized: {len(clusters)} clusters for {len(agent.bins_data)} bins")
+        
+        # Mark simulation as started
+        agent.simulation_started = True
+        print(f"✅ Simulation started - agent_id={id(agent)}")
+        
         return jsonify({
             "status": "success",
             "message": "Simplified simulation started",

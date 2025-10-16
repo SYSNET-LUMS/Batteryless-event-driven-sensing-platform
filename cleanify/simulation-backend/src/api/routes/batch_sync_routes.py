@@ -57,11 +57,11 @@ def batch_sync():
             depot_data['id'] = f"DEPOT_{i}"
             repo._depots.append(depot_data)
         repo._id_counters['depot'] = len(depots)
-        # Ensure agent reflects latest state and invalidate clustering cache
+        # Ensure agent reflects latest state
+        # Note: Clusters are NOT invalidated here - they'll be calculated at next simulation start
         agent = get_agent()
         agent.bins_data = repo.get_bins()
         agent.depot_data = repo.get_depots()
-        agent.invalidate_cluster_cache()
         return jsonify({'status': 'success'})
     except Exception as e:
         return jsonify({'status': 'error', 'message': str(e)}), 500
