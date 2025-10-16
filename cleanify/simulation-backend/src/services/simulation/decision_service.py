@@ -31,37 +31,78 @@ class DecisionService:
         depot_data = data.get('depots_data', [{}])[0] if data.get('depots_data') else None
         schedules = data.get('schedules', [])
         preferred_bin_ids = data.get('preferred_bin_ids')
-        
+        active_cluster_assignments = data.get('active_cluster_assignments') or {}
+        print(f"[DEBUG] DecisionService.get_routing_decision called at {current_time}")
+        print(f"[DEBUG] preferred_bin_ids: {preferred_bin_ids}")
+        print(f"[DEBUG] active_cluster_assignments: {active_cluster_assignments}")
+
         if not bins_data or not trucks_data:
             return []
-        
+
         # Respect collection queue when provided (fuel efficiency + overflow prevention)
         if preferred_bin_ids:
             print(f"🎯 Using collection queue priority routing: {len(preferred_bin_ids)} bins")
-            
             # Filter bins to only those in the collection queue
             filtered_bins = [b for b in bins_data if b.get('id') in preferred_bin_ids]
-            
+            print(f"[DEBUG] Filtered bins for queue: {[b.get('id') for b in filtered_bins]}")
             if not filtered_bins:
                 print("⚠️ No bins in collection queue need immediate dispatch")
                 return []
-            
-            # Use basic optimization that respects preferred_bin_ids
             clusters = self._get_clusters(filtered_bins)
+            print(f"[DEBUG] Clusters formed: {list(clusters.keys())}")
             if not clusters:
                 clusters = {i: [bin_data] for i, bin_data in enumerate(filtered_bins)}
-            
             optimization_result = self.optimization_service.optimize_truck_routes_with_vroom(
                 trucks_data, clusters, depot_data, current_time, preferred_bin_ids
             )
-            
             routes = optimization_result.get('routes', [])
-            
-            # Add collection queue context to routes
+            print(f"[DEBUG] Initial routes: {routes}")
+            # Prevent duplicate dispatch to clusters with active assignments
+            if active_cluster_assignments:
+                bin_to_cluster = {}
+                for cid, c_bins in clusters.items():
+                    for b in c_bins:
+                        bin_to_cluster[b['id']] = str(cid)
+                assigned_clusters = set(active_cluster_assignments.keys())
+                print(f"[DEBUG] Assigned clusters: {assigned_clusters}")
+                filtered_routes = []
+                for r in routes:
+                    route_bins = r.get('route', [])
+                    if not route_bins:
+                        filtered_routes.append(r)
+                        continue
+                    conflict = False
+                    for bid in route_bins:
+                        cid = bin_to_cluster.get(bid)
+                        if cid and cid in assigned_clusters:
+                            print(f"[DEBUG] Route {r} conflicts with assigned cluster {cid}")
+                            conflict = True
+                            break
+                    if not conflict:
+                        filtered_routes.append(r)
+                print(f"[DEBUG] Routes after assignment filtering: {filtered_routes}")
+                routes = filtered_routes
+            # Within this decision cycle, allow at most one route per cluster
+            if routes:
+                bin_to_cluster = {}
+                for cid, c_bins in clusters.items():
+                    for b in c_bins:
+                        bin_to_cluster[b['id']] = str(cid)
+                seen_clusters = set()
+                unique_routes = []
+                for r in routes:
+                    cids = {bin_to_cluster.get(bid) for bid in r.get('route', []) if bin_to_cluster.get(bid) is not None}
+                    primary_cid = next(iter(cids)) if cids else None
+                    if primary_cid is None or primary_cid not in seen_clusters:
+                        unique_routes.append(r)
+                        if primary_cid:
+                            seen_clusters.add(primary_cid)
+                print(f"[DEBUG] Unique routes after deduplication: {unique_routes}")
+                routes = unique_routes
             for route in routes:
                 route['collection_source'] = 'priority_queue'
                 route['reason'] = f"Collection queue dispatch: {route.get('reason', 'Optimized route')}"
-            
+            print(f"[DEBUG] Final routes returned: {routes}")
             return routes
         
         # Fallback to dynamic optimization when no collection queue filtering
@@ -133,6 +174,35 @@ class DecisionService:
         )
         
         routes = optimization_result.get('routes', [])
+        # Deduplicate by cluster within this decision cycle
+        if routes:
+            bin_to_cluster = {}
+            for cid, c_bins in clusters.items():
+                for b in c_bins:
+                    bin_to_cluster[b['id']] = str(cid)
+            seen_clusters = set()
+            unique_routes = []
+            for r in routes:
+                cids = {bin_to_cluster.get(bid) for bid in r.get('route', []) if bin_to_cluster.get(bid) is not None}
+                primary_cid = next(iter(cids)) if cids else None
+                if primary_cid is None or primary_cid not in seen_clusters:
+                    unique_routes.append(r)
+                    if primary_cid:
+                        seen_clusters.add(primary_cid)
+            routes = unique_routes
+        if active_cluster_assignments:
+            bin_to_cluster = {}
+            for cid, c_bins in clusters.items():
+                for b in c_bins:
+                    bin_to_cluster[b['id']] = str(cid)
+            assigned_clusters = set(active_cluster_assignments.keys())
+            filtered_routes = []
+            for r in routes:
+                route_bins = r.get('route', [])
+                conflict = any((bin_to_cluster.get(bid) in assigned_clusters) for bid in route_bins)
+                if not conflict:
+                    filtered_routes.append(r)
+            routes = filtered_routes
         
         # Add fallback context to routes
         for route in routes:

@@ -62,7 +62,6 @@ def batch_sync():
         agent.bins_data = repo.get_bins()
         agent.depot_data = repo.get_depots()
         agent.invalidate_cluster_cache()
-        print(f"✅ Using singleton agent in batch_sync_routes - updated state & invalidated cache (agent_id={id(agent)})")
         return jsonify({'status': 'success'})
     except Exception as e:
         return jsonify({'status': 'error', 'message': str(e)}), 500

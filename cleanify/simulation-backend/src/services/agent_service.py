@@ -66,8 +66,10 @@ class WasteCollectionAgent:
             # Filter collection queue to only bins recommended for dispatch
             filtered_bin_ids = set(self.collection_queue) & dispatch_bin_ids
 
+            # Provide active assignments for duplicate-dispatch filtering
+            active_assignments = self.proactive_dispatch.get_active_assignments()
             routing_result = self.decision_service.get_routing_decision(
-                {**data, "preferred_bin_ids": filtered_bin_ids}, current_time
+                {**data, "preferred_bin_ids": filtered_bin_ids, "active_cluster_assignments": active_assignments}, current_time
             )
             
             # Ensure all dispatched bins are properly tracked in collection queue
@@ -235,8 +237,6 @@ class WasteCollectionAgent:
             for cluster_id, info in cluster_info.items():
                 quality = info.get('quality_metrics', {})
                 logger.debug(f"Cluster {cluster_id}: {info['bin_ids']} - {quality.get('quality_rating', 'unknown')} quality")
-        else:
-            print(f"✅ AGENT: Using cached clusters ({len(self.cached_clusters or {})} clusters) - agent_id={id(self)}")
                     
         return self.cached_clusters or {}
     
@@ -391,6 +391,26 @@ class WasteCollectionAgent:
             
             # Build initial queue
             initial_queue = [b['id'] for b in candidates[:50]]
+
+            # Exclude bins whose clusters already have an active truck assignment
+            try:
+                if hasattr(self, 'proactive_dispatch') and initial_queue:
+                    clusters = self.get_or_create_clusters(bins)
+                    # Create reverse map: bin_id -> cluster_id
+                    bin_to_cluster = {}
+                    for cid, c_bins in clusters.items():
+                        for b in c_bins:
+                            bin_to_cluster[b['id']] = str(cid)
+                    active_clusters = set(self.proactive_dispatch.get_active_assignments().keys())
+                    filtered_queue = []
+                    for bid in initial_queue:
+                        cid = bin_to_cluster.get(bid)
+                        if cid and cid in active_clusters:
+                            continue
+                        filtered_queue.append(bid)
+                    initial_queue = filtered_queue
+            except Exception as e:
+                logger.warning(f"Failed to filter queue by active cluster assignments: {e}")
             
             # Get proactive cluster recommendations
             try:

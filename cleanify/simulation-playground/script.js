@@ -1317,13 +1317,9 @@ function updateBinsList() {
         const isTargeted = items.trucks.some(truck => truck.targetBin === bin);
         const inQueue = queueSet.has(bin.id);
         
-        // Enhanced status with queue indicator
+        // Enhanced status - bins in queue always need collection
         let statusText = isTargeted ? 'TARGETED' :
-            bin.fillLevel >= dynamicThreshold ? 'NEEDS COLLECTION' : 'OK';
-        
-        if (inQueue && !isTargeted) {
-            statusText = 'IN QUEUE';
-        }
+            (bin.fillLevel >= dynamicThreshold || inQueue) ? 'NEEDS COLLECTION' : 'OK';
 
         // Show both thresholds if they differ
         const thresholdText = Math.abs(dynamicThreshold - staticThreshold) > 0.1

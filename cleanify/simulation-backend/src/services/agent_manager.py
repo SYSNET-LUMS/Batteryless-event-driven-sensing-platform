@@ -19,8 +19,6 @@ class AgentManager:
             print(f"🏗️ AgentManager: Creating new singleton WasteCollectionAgent")
             cls._instance = WasteCollectionAgent()
             cls._initialized = True
-        else:
-            print(f"✅ AgentManager: Using existing singleton agent - agent_id={id(cls._instance)}")
         
         return cls._instance
     

@@ -69,12 +69,28 @@ class ProactiveClusterDispatchService:
                 }
             
             # Check if cluster already has an active assignment
-            existing_assignment = self.active_cluster_assignments.get(trigger_cluster_id)
+            # Ensure cluster_id is a string key
+            cluster_key = str(trigger_cluster_id) if trigger_cluster_id is not None else None
+            existing_assignment = self.active_cluster_assignments.get(cluster_key) if cluster_key else None
             if existing_assignment:
+                if cluster_key is None:
+                    # Safety: no valid cluster key, fallback to dispatch but add to queue only
+                    return {
+                        'additional_bins_for_queue': [trigger_bin['id']],
+                        'dispatch_recommendation': 'dispatch',
+                        'assigned_truck_id': None,
+                        'estimated_capacity_after': None,
+                        'reason': 'Missing cluster key'
+                    }
                 # Evaluate if existing truck can handle additional bin
                 return self._evaluate_existing_assignment(
-                    trigger_bin, trigger_cluster_bins, existing_assignment, 
-                    all_bins, current_time
+                    cluster_key,
+                    trigger_bin,
+                    trigger_cluster_bins,
+                    existing_assignment,
+                    all_bins,
+                    all_trucks,
+                    current_time
                 )
             
             # Find proactive bins in the cluster
@@ -106,7 +122,7 @@ class ProactiveClusterDispatchService:
             
             # Register cluster assignment
             self._register_cluster_assignment(
-                trigger_cluster_id, best_truck['id'], 
+                cluster_key if cluster_key is not None else str(trigger_bin['id']), best_truck['id'], 
                 [trigger_bin] + proactive_bins, current_time
             )
             
@@ -272,9 +288,9 @@ class ProactiveClusterDispatchService:
             'total_load': self._calculate_cluster_load(assigned_bins)
         }
     
-    def _evaluate_existing_assignment(self, new_bin: Dict, cluster_bins: List[Dict],
+    def _evaluate_existing_assignment(self, cluster_id: str, new_bin: Dict, cluster_bins: List[Dict],
                                     existing_assignment: Dict, all_bins: List[Dict],
-                                    current_time: float) -> Dict:
+                                    all_trucks: List[Dict], current_time: float) -> Dict:
         """Evaluate if existing truck assignment can handle new bin"""
         try:
             # Find the assigned truck
@@ -285,15 +301,21 @@ class ProactiveClusterDispatchService:
             # Calculate new bin load
             new_bin_load = self._calculate_cluster_load([new_bin])
             
-            # Find truck capacity (need to get truck data)
-            # For now, assume standard capacity - this should be passed in or looked up
-            estimated_truck_capacity = 1500  # Conservative estimate
+            # Find truck capacity from actual trucks list
+            estimated_truck_capacity = None
+            for t in all_trucks:
+                if t.get('id') == truck_id:
+                    estimated_truck_capacity = t.get('capacity', None)
+                    break
+            if estimated_truck_capacity is None:
+                # Fallback conservative estimate
+                estimated_truck_capacity = 1500
             available_capacity = estimated_truck_capacity - existing_load
             
             if new_bin_load <= (available_capacity * (1 - self.capacity_safety_margin)):
                 # Existing truck can handle the new bin
-                self.active_cluster_assignments[truck_id]['assigned_bins'].append(new_bin['id'])
-                self.active_cluster_assignments[truck_id]['total_load'] += new_bin_load
+                self.active_cluster_assignments[cluster_id]['assigned_bins'].append(new_bin['id'])
+                self.active_cluster_assignments[cluster_id]['total_load'] += new_bin_load
                 
                 return {
                     'additional_bins_for_queue': [new_bin['id']],
@@ -343,27 +365,49 @@ class ProactiveClusterDispatchService:
                 # Track truck assignment to clusters to prevent duplicates
                 assigned_bins = update_info.get('assigned_bins', [])
                 simulation_time = update_info.get('simulation_time', 0)
-                
+                all_bins = update_info.get('all_bins')
+
                 if assigned_bins:
-                    # Find which cluster these bins belong to
-                    # Use clustering to determine cluster membership
-                    if self.clustering_callback:
-                        # Get all bins to determine clusters
-                        # Note: This is a simplified approach - in production,
-                        # we'd want to get actual bin data from repository
-                        logger.info(f"Tracking assignment: truck {truck_id} → bins {assigned_bins}")
-                        
-                        # For now, create a basic cluster key from first bin
-                        # The actual cluster determination would need full bin data
-                        primary_bin = assigned_bins[0] if assigned_bins else None
-                        if primary_bin:
-                            cluster_key = f"cluster_{primary_bin}"
-                            self.active_cluster_assignments[cluster_key] = {
-                                'truck_id': truck_id,
-                                'assigned_bins': assigned_bins,
-                                'assignment_time': simulation_time,
-                                'status': 'active'
-                            }
+                    logger.info(f"Tracking assignment: truck {truck_id} → bins {assigned_bins}")
+                    # Determine clusters using provided all_bins if available
+                    if all_bins and self.clustering_callback:
+                        try:
+                            clusters = self.clustering_callback(all_bins)
+                            # Build reverse map: bin_id -> cluster_id
+                            bin_to_cluster = {}
+                            for cid, c_bins in clusters.items():
+                                for b in c_bins:
+                                    bin_to_cluster[b['id']] = str(cid)
+                            # Group assigned bins by their cluster_id
+                            cluster_groups: Dict[str, List[str]] = {}
+                            for bid in assigned_bins:
+                                cid = bin_to_cluster.get(bid)
+                                if cid:
+                                    cluster_groups.setdefault(cid, []).append(bid)
+                            # Build map for quick lookup
+                            id_to_bin = {b['id']: b for b in all_bins}
+                            for cid, bin_ids in cluster_groups.items():
+                                # Compute total load for these assigned bins
+                                assigned_bin_objs = [id_to_bin[bid] for bid in bin_ids if bid in id_to_bin]
+                                total_load = self._calculate_cluster_load(assigned_bin_objs) if assigned_bin_objs else 0.0
+                                self.active_cluster_assignments[cid] = {
+                                    'truck_id': truck_id,
+                                    'assigned_bins': bin_ids,
+                                    'assigned_at': simulation_time,
+                                    'total_load': total_load
+                                }
+                        except Exception as e:
+                            logger.warning(f"Failed to map assigned bins to clusters: {e}")
+                    else:
+                        # Fallback: use a consistent but less accurate key per first bin
+                        primary_bin = assigned_bins[0]
+                        cluster_key = f"unknown_cluster_of:{primary_bin}"
+                        self.active_cluster_assignments[cluster_key] = {
+                            'truck_id': truck_id,
+                            'assigned_bins': assigned_bins,
+                            'assigned_at': simulation_time,
+                            'total_load': 0.0
+                        }
     
     def get_active_assignments(self) -> Dict:
         """Get current active cluster assignments for monitoring"""

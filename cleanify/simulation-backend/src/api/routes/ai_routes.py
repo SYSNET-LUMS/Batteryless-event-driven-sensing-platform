@@ -41,8 +41,6 @@ def get_ai_decision(decision_type):
                 schedules = repo.get_schedules()
                 simulation_time = data.get('simulation_time', 0)
                 reserved_trucks = schedule_service.get_reserved_trucks(schedules, simulation_time)
-                if reserved_trucks:
-                    print(f"🔒 {len(reserved_trucks)} trucks reserved for upcoming schedules: {reserved_trucks}")
             except Exception as e:
                 print(f"⚠️ Error checking truck reservations: {e}")
         
@@ -63,7 +61,6 @@ def get_ai_decision(decision_type):
             ready_dispatches = agent.process_waiting_trucks(simulation_time)
             
             if ready_dispatches:
-                print(f"🚛 {len(ready_dispatches)} trucks ready for dispatch after waiting")
                 result.extend(ready_dispatches)
         
         return jsonify({
@@ -223,11 +220,15 @@ def update_truck_assignment():
         # If route started, also update proactive dispatch with bin assignments
         if status == 'route_started' and assigned_bins:
             # Update proactive dispatch using existing method
+            # Provide full bins so service can map bin IDs to proper cluster IDs
+            repo = current_app.system_repository
+            all_bins = repo.get_bins() if hasattr(repo, 'get_bins') else []
             agent.proactive_dispatch.update_truck_assignments({
                 truck_id: {
                     'status': status,
                     'assigned_bins': assigned_bins,
-                    'simulation_time': simulation_time
+                    'simulation_time': simulation_time,
+                    'all_bins': all_bins
                 }
             })
         
