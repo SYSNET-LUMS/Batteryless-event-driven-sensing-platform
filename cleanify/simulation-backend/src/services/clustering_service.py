@@ -14,6 +14,7 @@ Desired logic (as specified):
 Creates geographically sensible clusters based on bin proximity.
 """
 
+import os
 from typing import Dict, List, Optional, Tuple, Union
 from config.settings import Config
 from services.external.osrm_service import OSRMService
@@ -43,13 +44,19 @@ class ClusteringService:
         self.config = config or Config()
         self.osrm_service = osrm_service
         
-        # Clustering parameters
-        self.depot_distance_percentage = 0.35  # 35% of nearest depot distance for per-bin radius
+        # Clustering parameters - read from environment variables with defaults
+        self.depot_distance_percentage = float(os.getenv('DEPOT_DISTANCE_PERCENTAGE', '0.35'))
         # No lower bound; keep field for reference but do not apply
         self.min_bin_radius_m = 0
-        self.max_bin_radius_m = 2000   # Upper cap 2km
-        self.default_bin_radius_m = 1400  # Fallback when no depots
+        self.max_bin_radius_m = float(os.getenv('MAX_BIN_RADIUS_M', '2000'))
+        self.default_bin_radius_m = float(os.getenv('DEFAULT_BIN_RADIUS_M', '1400'))
         self.debug_enabled = False  # Control debug output
+        
+        # Log clustering configuration on initialization
+        print(f"📊 Clustering Configuration (from environment):")
+        print(f"   DEPOT_DISTANCE_PERCENTAGE: {self.depot_distance_percentage} ({self.depot_distance_percentage * 100}%)")
+        print(f"   MAX_BIN_RADIUS_M: {self.max_bin_radius_m}m")
+        print(f"   DEFAULT_BIN_RADIUS_M: {self.default_bin_radius_m}m")
     
     def create_simple_dynamic_clusters(self, bins_data: List[Dict], depot_data: Optional[Union[Dict, List[Dict]]] = None) -> Dict:
         """

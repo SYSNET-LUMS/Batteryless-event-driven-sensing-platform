@@ -1,6 +1,13 @@
 import logging
 import sys
 from pathlib import Path
+from dotenv import load_dotenv
+
+# Load environment variables from .env file in repository root
+# Path: Cleanify/.env (two levels up from src/)
+env_path = Path(__file__).parent.parent.parent.parent / '.env'
+load_dotenv(dotenv_path=env_path)
+print(f"🔧 Loaded environment from: {env_path}")
 
 # Add src to path
 sys.path.insert(0, str(Path(__file__).parent))

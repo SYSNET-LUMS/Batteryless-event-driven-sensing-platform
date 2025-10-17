@@ -2,9 +2,17 @@
 import json
 import os
 import sys
+from pathlib import Path
+from dotenv import load_dotenv
 
+# Load environment variables from repository root
 CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
 SRC_DIR = os.path.abspath(os.path.join(CURRENT_DIR, ".."))
+REPO_ROOT = Path(SRC_DIR).parent.parent.parent
+ENV_PATH = REPO_ROOT / '.env'
+load_dotenv(dotenv_path=ENV_PATH)
+print(f"🔧 Test script loaded environment from: {ENV_PATH}")
+
 if SRC_DIR not in sys.path:
     sys.path.insert(0, SRC_DIR)
 

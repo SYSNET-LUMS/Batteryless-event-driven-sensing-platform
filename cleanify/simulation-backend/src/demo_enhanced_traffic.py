@@ -7,7 +7,16 @@ This demonstrates how the abc.py concepts have been integrated into the sophisti
 
 import sys
 import os
-sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+from pathlib import Path
+from dotenv import load_dotenv
+
+# Load environment variables from repository root
+CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
+REPO_ROOT = Path(CURRENT_DIR).parent.parent.parent
+ENV_PATH = REPO_ROOT / '.env'
+load_dotenv(dotenv_path=ENV_PATH)
+
+sys.path.append(CURRENT_DIR)
 
 from services.traffic_service import TrafficManager
 from services.traffic.predictive_dispatch_service import PredictiveDispatchService

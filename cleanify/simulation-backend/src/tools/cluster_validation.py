@@ -8,17 +8,25 @@ and prints a concise summary.
 Run: python -m tools.cluster_validation
 """
 import os
+import sys
 import json
 from typing import List, Dict
+from pathlib import Path
+from dotenv import load_dotenv
+
+# Load environment variables from repository root
+CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
+SRC_DIR = os.path.abspath(os.path.join(CURRENT_DIR, ".."))
+REPO_ROOT = Path(SRC_DIR).parent.parent.parent
+ENV_PATH = REPO_ROOT / '.env'
+load_dotenv(dotenv_path=ENV_PATH)
+print(f"🔧 Validation tool loaded environment from: {ENV_PATH}\n")
 
 try:
     # Relative import when run as module
     from services.clustering_service import ClusteringService
 except Exception:
     # Fallback path adjustment for direct execution
-    import sys
-    CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
-    SRC_DIR = os.path.abspath(os.path.join(CURRENT_DIR, ".."))
     if SRC_DIR not in sys.path:
         sys.path.insert(0, SRC_DIR)
     from services.clustering_service import ClusteringService
