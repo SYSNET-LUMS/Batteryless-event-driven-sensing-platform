@@ -529,14 +529,16 @@ class DynamicRouteOptimizer:
             # Collect all bins and trucks for optimization
             all_bins_to_route = []
             vroom_vehicles = []
+            trucks_for_vroom = []
             
             for dispatch in new_dispatches:
                 truck_id = dispatch['truck_id']
-                assigned_bins = dispatch['assigned_bins']
+                assigned_bins = dispatch.get('assigned_bins', [])
                 
                 # Find truck data
                 truck_info = next((t for t in available_trucks if t['truck'].get('id') == truck_id), None)
                 if not truck_info:
+                    logger.debug(f"Skipping dispatch for truck {truck_id}: truck not present in available list")
                     continue
                 
                 truck_data = truck_info['truck']
@@ -551,10 +553,14 @@ class DynamicRouteOptimizer:
                     'capacity': [int(available_capacity)],
                     'profile': 'driving'
                 })
+                trucks_for_vroom.append(truck_data)
                 
+                if not assigned_bins:
+                    logger.debug(f"Dispatch for truck {truck_id} has no assigned bins; skipping")
+                    continue
                 all_bins_to_route.extend(assigned_bins)
             
-            if not all_bins_to_route:
+            if not all_bins_to_route or not trucks_for_vroom:
                 return []
             
             # Create VROOM problem
@@ -583,10 +589,13 @@ class DynamicRouteOptimizer:
                 vroom_problem['jobs'].append(job)
             
             # Solve optimization
-            truck_list = [d['truck'] for d in new_dispatches]
-            bin_list = [d for d in bins_data if d['id'] in [b['id'] for dispatch in new_dispatches for b in dispatch['bins']]]
+            unique_bins_map = {bin_data.get('id'): bin_data for bin_data in all_bins_to_route if bin_data.get('id')}
+            selected_bins = list(unique_bins_map.values())
+            if not selected_bins:
+                logger.debug("No eligible bins for VROOM optimization after filtering")
+                return []
             vroom_result = self.vroom_service.optimize_vehicle_routes(
-                truck_list, bin_list, depot_data
+                trucks_for_vroom, selected_bins, depot_data
             )
             
             if vroom_result.get('success', False):
