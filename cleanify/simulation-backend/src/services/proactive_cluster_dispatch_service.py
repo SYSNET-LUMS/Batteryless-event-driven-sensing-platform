@@ -1,6 +1,7 @@
 import logging
 from typing import Dict, List, Set, Optional, Tuple, Callable
 from services.clustering_service import ClusteringService
+from services.traffic_service import TrafficManager
 from utils.distance import calculate_distance_km
 
 logger = logging.getLogger(__name__)
@@ -20,12 +21,15 @@ class ProactiveClusterDispatchService:
                  clustering_callback: Optional[Callable] = None):
         self.clustering_service = clustering_service or ClusteringService()
         self.clustering_callback = clustering_callback  # Preferred: use agent's cached clustering
+        self.traffic_manager = TrafficManager()
         
-        # Parameters for proactive cluster management
-        self.cluster_radius_km = 0.6  # Match clustering distance threshold
-        self.proactive_dt_threshold_percent = 5.0  # Add bins within 5% of DT
+        # Parameters for proactive cluster management (simplified)
+        self.cluster_radius_km = 0.6  # Nominal cluster radius (km) - informational
+        self.proactive_dt_threshold_percent = 5.0  # Consider bins within 5% of DT
         self.proactive_time_window_hours = 1.0  # Add bins reaching DT within 1 hour
         self.capacity_safety_margin = 0.05  # 5% safety margin for capacity estimates
+        # Scoring weights for selecting bins within a cluster (fill level, fill rate, proximity)
+        self.score_weights = {'fill': 0.55, 'fill_rate': 0.30, 'proximity': 0.15}
         
         # Track active cluster assignments to prevent duplicate dispatches
         self.active_cluster_assignments: Dict[str, Dict] = {}  # cluster_id -> assignment_info
@@ -44,107 +48,171 @@ class ProactiveClusterDispatchService:
             - estimated_capacity_after: Remaining capacity after all collections
             - reason: Explanation of decision
         """
+        # Simplified cluster-scoped dispatch algorithm (single-truck per cluster)
         try:
-            # Get clusters using cached clustering if available
+            # Get clusters
             if self.clustering_callback:
-                print("📌 ProactiveDispatch: Using cached clustering from agent")
                 clusters = self.clustering_callback(all_bins)
             else:
-                print("📌 ProactiveDispatch: Using direct clustering service")
                 clusters = self.clustering_service.create_adaptive_clusters(all_bins)
-            
-            # Find which cluster the trigger bin belongs to
-            trigger_cluster_id, trigger_cluster_bins = self._find_bin_cluster(
-                trigger_bin['id'], clusters
-            )
-            
-            if not trigger_cluster_bins:
-                # Single bin cluster - handle normally
+
+            cluster_key, cluster_bins = self._find_bin_cluster(trigger_bin['id'], clusters)
+            if not cluster_bins:
                 return {
                     'additional_bins_for_queue': [],
                     'dispatch_recommendation': 'dispatch',
                     'assigned_truck_id': None,
                     'estimated_capacity_after': None,
-                    'reason': 'Single bin cluster - normal dispatch'
+                    'reason': 'Bin not found in any cluster - dispatch normally'
                 }
-            
-            # Check if cluster already has an active assignment
-            # Ensure cluster_id is a string key
-            cluster_key = str(trigger_cluster_id) if trigger_cluster_id is not None else None
-            print(
-                f"🔎 ProactiveDispatch: bin {trigger_bin['id']} in cluster {cluster_key}, "
-                f"existing_assignment={bool(cluster_key and cluster_key in self.active_cluster_assignments)}"
-            )
-            existing_assignment = self.active_cluster_assignments.get(cluster_key) if cluster_key else None
-            if existing_assignment:
-                if cluster_key is None:
-                    # Safety: no valid cluster key, fallback to dispatch but add to queue only
-                    return {
-                        'additional_bins_for_queue': [trigger_bin['id']],
-                        'dispatch_recommendation': 'dispatch',
-                        'assigned_truck_id': None,
-                        'estimated_capacity_after': None,
-                        'reason': 'Missing cluster key'
-                    }
-                # Evaluate if existing truck can handle additional bin
-                return self._evaluate_existing_assignment(
-                    cluster_key,
-                    trigger_bin,
-                    trigger_cluster_bins,
-                    existing_assignment,
-                    all_bins,
-                    all_trucks,
-                    current_time
-                )
-            
-            # Find proactive bins in the cluster
-            proactive_bins = self._find_proactive_bins_in_cluster(
-                trigger_cluster_bins, current_time, existing_collection_queue, trigger_bin_id=trigger_bin['id']
-            )
-            if proactive_bins:
-                print(
-                    f"🧮 ProactiveDispatch: additional bins for cluster {cluster_key}: "
-                    f"{[b['id'] for b in proactive_bins]}"
-                )
-            
-            # Find best truck for this cluster
-            best_truck = self._find_best_truck_for_cluster(
-                trigger_cluster_bins, all_trucks, proactive_bins
-            )
-            
-            if not best_truck:
+
+            cluster_key = str(cluster_key) if cluster_key is not None else str(trigger_bin['id'])
+
+            # If cluster already has active assignment, ask to wait for that truck
+            if cluster_key in self.active_cluster_assignments:
+                assignment = self.active_cluster_assignments[cluster_key]
                 return {
-                    'additional_bins_for_queue': [bin_data['id'] for bin_data in proactive_bins],
+                    'additional_bins_for_queue': [],
+                    'dispatch_recommendation': 'wait_for_existing_truck',
+                    'assigned_truck_id': assignment.get('truck_id'),
+                    'estimated_capacity_after': assignment.get('total_load'),
+                    'reason': 'Cluster already assigned to a truck'
+                }
+
+            # Build candidate set: cluster bins excluding recently collected and those already queued
+            candidates = []
+            for b in cluster_bins:
+                if b.get('id') == trigger_bin.get('id'):
+                    candidates.append(b)
+                    continue
+                if b.get('id') in existing_collection_queue:
+                    continue
+                # skip recently collected
+                last_col = b.get('lastCollection') or b.get('last_collection', 0)
+                if current_time and last_col and (current_time - last_col) / 60 < 30:
+                    continue
+                # only consider bins with non-trivial fill
+                if b.get('fillLevel', 0) < 5:
+                    continue
+                candidates.append(b)
+
+            # Ensure trigger bin is present
+            if trigger_bin.get('id') not in [c['id'] for c in candidates]:
+                candidates.insert(0, trigger_bin)
+
+            # Score bins: higher fill, higher fill rate, closer to trigger bin
+            def score_bin(b):
+                fill = b.get('fillLevel', 0)
+                fill_rate = b.get('fillRate', 0)
+                # normalize fill_rate roughly to 0-100 scale assuming typical rates
+                fr_score = min(100, (fill_rate / 10.0) * 100)
+                dist_m = calculate_distance_km(trigger_bin.get('lat', 0), trigger_bin.get('lng', 0), b.get('lat', 0), b.get('lng', 0)) * 1000
+                # proximity score: closer is better
+                prox = max(0, 1 - (dist_m / 2000.0)) * 100
+                w = self.score_weights
+                return w['fill'] * fill + w['fill_rate'] * fr_score + w['proximity'] * prox
+
+            for c in candidates:
+                c['_score'] = score_bin(c)
+
+            # Consider only idle trucks for full cluster dispatch; prefer trucks with enough capacity
+            idle_trucks = [t for t in all_trucks if t.get('status') == 'idle']
+            if not idle_trucks:
+                return {
+                    'additional_bins_for_queue': [c['id'] for c in candidates if c['id'] != trigger_bin['id']],
                     'dispatch_recommendation': 'dispatch',
                     'assigned_truck_id': None,
                     'estimated_capacity_after': None,
-                    'reason': 'No suitable truck available'
+                    'reason': 'No idle trucks available'
                 }
-            
-            # Calculate total load for cluster collection
-            total_load = self._calculate_cluster_load(
-                [trigger_bin] + proactive_bins
+
+            best_choice = None
+            best_choice_score = -1
+
+            # Greedy selection by score for each truck
+            for truck in idle_trucks:
+                avail = truck.get('capacity', 1000) - truck.get('currentLoad', 0)
+                avail = avail * (1 - self.capacity_safety_margin)
+                # greedy pick highest-score bins until capacity used
+                sorted_bins = sorted(candidates, key=lambda x: x['_score'], reverse=True)
+                chosen = []
+                used = 0.0
+                total_score = 0.0
+                for cb in sorted_bins:
+                    vol = (cb.get('fillLevel', 0) / 100.0) * cb.get('capacity', 500)
+                    if vol + used <= avail and vol > 0:
+                        chosen.append(cb)
+                        used += vol
+                        total_score += cb['_score']
+
+                # compute truck preference score (balance total_score and proximity)
+                # distance from truck to cluster center
+                center_lat = sum(b.get('lat', 0) for b in cluster_bins) / len(cluster_bins)
+                center_lng = sum(b.get('lng', 0) for b in cluster_bins) / len(cluster_bins)
+                dist_km = calculate_distance_km(truck.get('lat', 0), truck.get('lng', 0), center_lat, center_lng)
+                distance_score = 1.0 / (1.0 + dist_km)
+                choice_score = total_score * 0.7 + distance_score * 0.3
+
+                if choice_score > best_choice_score and chosen:
+                    best_choice_score = choice_score
+                    best_choice = {
+                        'truck': truck,
+                        'chosen_bins': chosen,
+                        'used_capacity': used,
+                        'distance_km': dist_km,
+                        'total_score': total_score
+                    }
+
+            if not best_choice:
+                # Nothing fits in any truck - fall back to dispatch just the trigger bin
+                return {
+                    'additional_bins_for_queue': [],
+                    'dispatch_recommendation': 'dispatch',
+                    'assigned_truck_id': None,
+                    'estimated_capacity_after': None,
+                    'reason': 'No truck can accommodate cluster bins - dispatch trigger bin alone'
+                }
+
+            # Traffic-aware decision: check if waiting is beneficial/safe
+            truck = best_choice['truck']
+            # approximate base travel time (minutes) one-way using truck distance and 40 km/h
+            base_travel_min = (best_choice['distance_km'] / 40.0) * 60.0
+            time_to_overflow_hours = self._time_to_threshold_hours(trigger_bin, trigger_bin.get('dynamic_threshold', trigger_bin.get('threshold', 80)))
+            time_to_overflow_min = time_to_overflow_hours * 60.0
+
+            # Ask TrafficManager whether to wait
+            current_time_min = int(current_time // 60) if current_time else 0
+            dispatch_decision = self.traffic_manager.calculate_dispatch_time(
+                time_to_overflow_min, base_travel_min, current_time_min, bin_id=trigger_bin.get('id'), bin_fill_level=trigger_bin.get('fillLevel', 0), use_predictive_logic=True
             )
-            
-            available_capacity = best_truck['capacity'] - best_truck.get('currentLoad', 0)
-            capacity_after = available_capacity - total_load
-            
-            # Register cluster assignment
-            self._register_cluster_assignment(
-                cluster_key if cluster_key is not None else str(trigger_bin['id']), best_truck['id'], 
-                [trigger_bin] + proactive_bins, current_time
-            )
-            
+
+            if dispatch_decision.get('dispatch') == 'wait' and dispatch_decision.get('delay_min', 0) > 0:
+                return {
+                    'additional_bins_for_queue': [b['id'] for b in best_choice['chosen_bins'] if b['id'] != trigger_bin['id']],
+                    'dispatch_recommendation': 'wait',
+                    'assigned_truck_id': None,
+                    'estimated_capacity_after': None,
+                    'reason': f"Wait recommended by traffic manager: {dispatch_decision.get('reason')}",
+                    'wait_min': dispatch_decision.get('delay_min', 0)
+                }
+
+            # Otherwise dispatch now: register assignment and return route
+            assigned_bins = best_choice['chosen_bins']
+            self._register_cluster_assignment(cluster_key, truck['id'], assigned_bins, current_time)
+
+            # Compute simple nearest-neighbor route starting from truck location
+            route = self._compute_nearest_neighbor_route(truck, assigned_bins)
+
             return {
-                'additional_bins_for_queue': [bin_data['id'] for bin_data in proactive_bins],
+                'additional_bins_for_queue': [b['id'] for b in assigned_bins if b['id'] != trigger_bin['id']],
                 'dispatch_recommendation': 'dispatch',
-                'assigned_truck_id': best_truck['id'],
-                'estimated_capacity_after': capacity_after,
-                'reason': f'Proactive cluster dispatch: {len(proactive_bins)} additional bins added'
+                'assigned_truck_id': truck['id'],
+                'estimated_capacity_after': truck.get('capacity', 0) - truck.get('currentLoad', 0) - best_choice['used_capacity'],
+                'reason': f'Proactive cluster dispatch simplified: assigned {len(assigned_bins)} bins',
+                'route': route
             }
-            
         except Exception as e:
-            logger.error(f"Error in proactive cluster dispatch: {e}")
+            logger.error(f"Error in simplified proactive cluster dispatch: {e}")
             return {
                 'additional_bins_for_queue': [],
                 'dispatch_recommendation': 'dispatch',
@@ -165,25 +233,17 @@ class ProactiveClusterDispatchService:
                                       current_time: float,
                                       existing_queue: List[str],
                                       trigger_bin_id: Optional[str] = None) -> List[Dict]:
-        """Find bins in cluster that should be proactively collected"""
+        # Keep legacy method for compatibility but simplified - prefer _should_collect_proactively
         proactive_bins = []
-        
         for bin_data in cluster_bins:
-            # Skip the trigger bin to avoid double counting
             if trigger_bin_id and bin_data.get('id') == trigger_bin_id:
                 continue
-            # Skip if already in collection queue
-            if bin_data['id'] in existing_queue:
+            if bin_data.get('id') in existing_queue:
                 continue
-                
-            # Skip if recently collected
             if self._recently_collected(bin_data, current_time):
                 continue
-                
-            # Check if bin is close to DT or will reach DT soon
             if self._should_collect_proactively(bin_data):
                 proactive_bins.append(bin_data)
-        
         return proactive_bins
     
     def _should_collect_proactively(self, bin_data: Dict) -> bool:
@@ -639,3 +699,21 @@ class ProactiveClusterDispatchService:
             
         except Exception as e:
             logger.error(f"Error marking bins as collected: {e}")
+
+    def _compute_nearest_neighbor_route(self, truck: Dict, bins: List[Dict]) -> List[str]:
+        """Simple nearest-neighbor route starting from truck location."""
+        if not bins:
+            return []
+
+        remaining = bins[:]  # shallow copy
+        route = []
+        curr_lat = truck.get('lat', 0)
+        curr_lng = truck.get('lng', 0)
+
+        while remaining:
+            nearest = min(remaining, key=lambda b: calculate_distance_km(curr_lat, curr_lng, b.get('lat', 0), b.get('lng', 0)))
+            route.append(nearest.get('id'))
+            curr_lat, curr_lng = nearest.get('lat', 0), nearest.get('lng', 0)
+            remaining.remove(nearest)
+
+        return route
