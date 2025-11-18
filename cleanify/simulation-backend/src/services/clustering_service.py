@@ -26,7 +26,7 @@ class ClusteringService:
     Proximity-based clustering service that creates geographically sensible clusters.
     
     Algorithm:
-    1. Calculate dynamic bin service radius based on depot proximity (if available)
+    1. Calculate dynamic bin service radius based on depot proximity (requires at least one depot)
     2. For each bin, find all nearby bins within its service radius
     3. Group them into connected components (clusters)
     4. Merge overlapping clusters automatically
@@ -37,26 +37,24 @@ class ClusteringService:
     
     This creates clusters where bins that are close to each other end up together,
     which is much more intuitive than mathematical clustering approaches.
+    
+    Note: If no depots are provided, clustering will raise a ValueError.
     """
     
     def __init__(self, config: Optional[Config] = None, osrm_service: Optional[OSRMService] = None):
         # Store optional services
         self.config = config or Config()
         self.osrm_service = osrm_service
-        
         # Clustering parameters - read from environment variables with defaults
         self.depot_distance_percentage = float(os.getenv('DEPOT_DISTANCE_PERCENTAGE', '0.35'))
         # No lower bound; keep field for reference but do not apply
         self.min_bin_radius_m = 0
         self.max_bin_radius_m = float(os.getenv('MAX_BIN_RADIUS_M', '2000'))
-        self.default_bin_radius_m = float(os.getenv('DEFAULT_BIN_RADIUS_M', '1400'))
         self.debug_enabled = False  # Control debug output
-        
         # Log clustering configuration on initialization
         print(f"📊 Clustering Configuration (from environment):")
         print(f"   DEPOT_DISTANCE_PERCENTAGE: {self.depot_distance_percentage} ({self.depot_distance_percentage * 100}%)")
         print(f"   MAX_BIN_RADIUS_M: {self.max_bin_radius_m}m")
-        print(f"   DEFAULT_BIN_RADIUS_M: {self.default_bin_radius_m}m")
     
     def create_simple_dynamic_clusters(self, bins_data: List[Dict], depot_data: Optional[Union[Dict, List[Dict]]] = None) -> Dict:
         """
@@ -155,7 +153,7 @@ class ClusteringService:
         - Supports multiple depots; uses nearest.
         - radius_i = min(percentage * nearest_distance_i, max_cap)
         - No lower bound.
-        - If no depots, every bin gets default_bin_radius_m.
+        - If no depots, raises ValueError.
         Returns dict: bin_id -> radius_m
         """
         # Normalize depot list
@@ -166,14 +164,9 @@ class ClusteringService:
             elif isinstance(depot_data, list):
                 depots = [d for d in depot_data if isinstance(d, dict) and 'lat' in d and 'lng' in d]
         
-        radii: Dict[str, float] = {}
         if not depots:
-            # Fallback: uniform default radius
-            for b in bins_data:
-                radii[b['id']] = float(self.default_bin_radius_m)
-            if self.debug_enabled:
-                print(f"  No depots provided. Using default radius {self.default_bin_radius_m}m for all bins")
-            return radii
+            raise ValueError("No depots provided. At least one depot is required for clustering.")
+        radii: Dict[str, float] = {}
         
         # Compute nearest depot distance per bin
         for b in bins_data:
@@ -207,10 +200,14 @@ class ClusteringService:
         # Build edges (O(n^2))
         for i in range(n):
             bi = bins_data[i]
-            ri = bin_radii.get(bi['id'], float(self.default_bin_radius_m))
+            if bi['id'] not in bin_radii:
+                raise ValueError(f"Missing radius for bin {bi['id']}. Ensure depot data is provided and radii are computed.")
+            ri = bin_radii[bi['id']]
             for j in range(i+1, n):
                 bj = bins_data[j]
-                rj = bin_radii.get(bj['id'], float(self.default_bin_radius_m))
+                if bj['id'] not in bin_radii:
+                    raise ValueError(f"Missing radius for bin {bj['id']}. Ensure depot data is provided and radii are computed.")
+                rj = bin_radii[bj['id']]
                 dist = calculate_haversine_distance(bi['lat'], bi['lng'], bj['lat'], bj['lng'])
                 if dist <= max(ri, rj):
                     adj[i].append(j)

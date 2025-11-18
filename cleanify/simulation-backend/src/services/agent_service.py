@@ -60,6 +60,14 @@ class WasteCollectionAgent:
             current_time = data.get('simulation_time', 0)
             bins_data = data.get('bins_data', [])
             trucks_data = data.get('trucks_data', [])
+            depots_data = data.get('depots_data', [])
+            # Error checks for required entities
+            if not bins_data:
+                raise ValueError("No bins provided. At least one bin is required to run the system.")
+            if not trucks_data:
+                raise ValueError("No trucks provided. At least one truck is required to run the system.")
+            if not depots_data:
+                raise ValueError("No depots provided. At least one depot is required to run the system.")
             # Rebuild queue based on current state
             self._rebuild_collection_queue(current_time)
 

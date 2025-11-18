@@ -61,7 +61,6 @@ radius_i = min(nearest_depot_distance × 0.35, 2000m)
 |-----------|---------|--------|-------------|
 | `DEPOT_DISTANCE_PERCENTAGE` | 0.35 (35%) | `.env` | Radius as fraction of depot distance |
 | `MAX_BIN_RADIUS_M` | 2000.0 m | `.env` | Maximum clustering radius |
-| `DEFAULT_BIN_RADIUS_M` | 1400.0 m | `.env` | Fallback radius if calculation fails |
 
 #### Example Radius Calculation
 
@@ -320,9 +319,8 @@ clusters = [[bin_1, bin_2, bin_3, ..., bin_n]]
 
 ### 4. Missing Depots
 ```python
-# Fallback to DEFAULT_BIN_RADIUS_M
-if not depots:
-    radius = DEFAULT_BIN_RADIUS_M  # 1400m
+# If not depots:
+raise ValueError("No depots provided. At least one depot is required for clustering.")
 ```
 
 ### 5. Chain Clustering
@@ -357,7 +355,6 @@ Result: All three in same cluster (transitivity via BIN_2)
 ```bash
 DEPOT_DISTANCE_PERCENTAGE=0.35
 MAX_BIN_RADIUS_M=2000.0
-DEFAULT_BIN_RADIUS_M=1400.0
 ```
 
 ### Loading Configuration
