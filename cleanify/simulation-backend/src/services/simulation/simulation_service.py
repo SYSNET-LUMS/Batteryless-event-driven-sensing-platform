@@ -193,19 +193,6 @@ class SimulationService:
                 'traffic_level': 'Unknown'
             }
     
-    def generate_cluster_data(self, bins_data: List[Dict], clusters: Dict) -> Dict:
-        """Generate cluster assignment data"""
-        clusters_data = {}
-        
-        try:
-            for cluster_id, cluster_bins in clusters.items():
-                for bin_data in cluster_bins:
-                    clusters_data[bin_data['id']] = [b['id'] for b in cluster_bins]
-        except Exception as e:
-            print(f"⚠️ Error generating cluster data: {e}")
-        
-        return clusters_data
-    
     def _calculate_single_dynamic_threshold(self, bin_data: Dict, 
                                           simulation_time_seconds: float,
                                           depot_data: Dict) -> float:

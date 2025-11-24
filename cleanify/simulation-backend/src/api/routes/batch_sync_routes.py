@@ -57,8 +57,7 @@ def batch_sync():
             depot_data['id'] = f"DEPOT_{i}"
             repo._depots.append(depot_data)
         repo._id_counters['depot'] = len(depots)
-        # Ensure agent reflects latest state
-        # Note: Clusters are NOT invalidated here - they'll be calculated at next simulation start
+    # Ensure agent reflects latest state for distance planner cache
         agent = get_agent()
         agent.bins_data = repo.get_bins()
         agent.depot_data = repo.get_depots()

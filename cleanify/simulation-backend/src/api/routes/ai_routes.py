@@ -75,7 +75,7 @@ def get_ai_decision(decision_type):
 
 @bp.route('/bin_reached_dt', methods=['POST'])
 def handle_bin_reached_dt():
-    """Handle bin reaching disposal threshold with proactive cluster optimization"""
+    """Handle bin reaching disposal threshold using pure distance dispatch."""
     try:
         agent = get_agent()
         repo = current_app.system_repository
@@ -99,14 +99,11 @@ def handle_bin_reached_dt():
         if not trigger_bin:
             return jsonify({"status": "error", "message": "Bin not found"}), 404
         
-        # Process with proactive cluster dispatch
-        result = agent.handle_bin_reached_dt_with_cluster_optimization(
-            trigger_bin, bins, trucks, current_time
-        )
-        
+        plan = agent.handle_bin_reached_dt(trigger_bin, bins, trucks, current_time)
         return jsonify({
             "status": "success",
-            "dispatch_decision": result
+            "mode": "distance_dispatch",
+            "dispatch_decision": plan
         })
         
     except Exception as e:
@@ -131,9 +128,37 @@ def get_proactive_dispatch_status():
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
 
+@bp.route('/dispatch/bin/<bin_id>', methods=['POST'])
+def plan_dispatch_for_bin(bin_id: str):
+    """Direct distance-dispatch planning API for operator tooling."""
+    try:
+        config = current_app.config_obj
+        dispatch_planner = getattr(current_app, 'dispatch_planner', None)
+        if not config.USE_DISTANCE_DISPATCH or not dispatch_planner:
+            return jsonify({
+                "status": "error",
+                "message": "Distance-based dispatch disabled"
+            }), 400
+
+        payload = request.get_json(silent=True) or {}
+        simulation_time = payload.get('simulation_time', 0)
+        plan = dispatch_planner.plan_dispatch_for_bin(bin_id, simulation_time)
+        http_status = 200 if plan.get('status') == 'success' else 400
+        return jsonify({
+            "status": "success" if plan.get('status') == 'success' else "error",
+            "mode": "distance_dispatch",
+            "dispatch_decision": plan
+        }), http_status
+
+    except Exception as e:
+        return jsonify({
+            "status": "error",
+            "message": str(e)
+        }), 500
+
 @bp.route('/check_urgent_bins', methods=['POST'])
 def check_urgent_bins():
-    """Check urgent bins and get cluster bins for collection"""
+    """Return distance-ranked bins to collect for a truck/target bin combo."""
     try:
         agent = get_agent()
         repo = current_app.system_repository
@@ -154,43 +179,22 @@ def check_urgent_bins():
         target_bin = next((b for b in bins if b['id'] == target_bin_id), None)
         if not target_bin:
             return jsonify({"status": "success", "bins_to_collect": []})
-        
-        # Get clusters
-        clusters = agent.get_or_create_clusters(bins) if len(bins) >= 2 else {}
-        
-        # Find cluster bins
-        cluster_bins = []
-        for cluster_id, c_bins in clusters.items():
-            if any(b['id'] == target_bin_id for b in c_bins):
-                cluster_bins = c_bins
-                break
-        
-        # Find truck capacity
-        truck = next((t for t in trucks if t['id'] == truck_id), None)
-        if not truck:
-            return jsonify({"status": "success", "bins_to_collect": []})
-        
-        # Use agent's knapsack-based collection
-        bins_to_collect = agent.collect_bins_from_cluster(
-            target_bin,
-            cluster_bins,
-            truck['capacity'],
-            current_load,
-            simulation_time
-        )
-        
-        # Include target bin
-        result_bins = [target_bin]
-        result_bins.extend(bins_to_collect)
-        
-        # Mark bins as assigned
-        for bin_data in result_bins:
+
+        # Use distance planner through agent helper
+        plan = agent.plan_distance_dispatch_for_bin(target_bin_id, simulation_time)
+        selected_bins = plan.get('selected_bins') or []
+        bins_by_id = {b['id']: b for b in bins}
+        bins_to_collect = [bins_by_id[bin_id] for bin_id in selected_bins if bin_id in bins_by_id]
+
+        # Optionally mark bins as assigned to maintain compatibility
+        for bin_data in bins_to_collect:
             agent.mark_bin_assigned(bin_data['id'])
         
         return jsonify({
             "status": "success",
-            "bins_to_collect": result_bins,
-            "cluster_size": len(cluster_bins)
+            "mode": "distance_dispatch",
+            "bins_to_collect": bins_to_collect,
+            "dispatch_decision": plan
         })
         
     except Exception as e:
@@ -217,20 +221,10 @@ def update_truck_assignment():
         # Update truck assignment status in agent
         agent.update_truck_assignment_status(truck_id, status)
         
-        # If route started, also update proactive dispatch with bin assignments
+        # For legacy compatibility we simply log assignments; distance dispatch has no
+        # cluster or proactive locking state to update.
         if status == 'route_started' and assigned_bins:
-            # Update proactive dispatch using existing method
-            # Provide full bins so service can map bin IDs to proper cluster IDs
-            repo = current_app.system_repository
-            all_bins = repo.get_bins() if hasattr(repo, 'get_bins') else []
-            agent.proactive_dispatch.update_truck_assignments({
-                truck_id: {
-                    'status': status,
-                    'assigned_bins': assigned_bins,
-                    'simulation_time': simulation_time,
-                    'all_bins': all_bins
-                }
-            })
+            print(f"🚛 Truck {truck_id} started route for bins {assigned_bins} at t={simulation_time}")
         
         return jsonify({
             "status": "success",
@@ -267,16 +261,7 @@ def bins_collected():
             if removed_count > 0:
                 print(f"🗑️ Removed {removed_count} collected bins from queue: {collected_bin_ids}")
         
-        # Update proactive dispatch to clear assignments for collected bins
-        if hasattr(agent, 'proactive_dispatch'):
-            repo = current_app.system_repository
-            all_bins = repo.get_bins() if hasattr(repo, 'get_bins') else []
-            
-            # Notify proactive dispatch service about collection
-            agent.proactive_dispatch.mark_bins_collected(
-                truck_id, collected_bin_ids, all_bins, simulation_time
-            )
-            print(f"✅ Truck {truck_id} collected bins: {collected_bin_ids}")
+        print(f"✅ Truck {truck_id} collected bins: {collected_bin_ids}")
         
         return jsonify({
             "status": "success",

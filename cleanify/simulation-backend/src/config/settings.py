@@ -33,6 +33,10 @@ class Config:
     VROOM_TIMEOUT: int = int(os.getenv('VROOM_TIMEOUT', '10'))
     VROOM_FALLBACK_ENABLED: bool = os.getenv('VROOM_FALLBACK_ENABLED', 'True').lower() == 'true'
     
-    # Clustering settings
-    CLUSTER_EPS_METERS: int = int(os.getenv('CLUSTER_EPS_METERS', '300'))
-    CLUSTER_MIN_SAMPLES: int = int(os.getenv('CLUSTER_MIN_SAMPLES', '2'))
+    # Distance-based dispatch settings
+    USE_DISTANCE_DISPATCH: bool = os.getenv('USE_DISTANCE_DISPATCH', 'True').lower() == 'true'
+    DISPATCH_NEARBY_RADIUS_M: int = int(os.getenv('DISPATCH_NEARBY_RADIUS_M', '1500'))
+    DISPATCH_COOLDOWN_MIN: int = int(os.getenv('DISPATCH_COOLDOWN_MIN', '30'))
+    DISPATCH_MAX_ROUTE_BINS: int = int(os.getenv('DISPATCH_MAX_ROUTE_BINS', '10'))
+    DISPATCH_CAPACITY_BUFFER_PERCENT: float = float(os.getenv('DISPATCH_CAPACITY_BUFFER_PERCENT', '5'))
+    DISPATCH_SPEED_KMH: float = float(os.getenv('DISPATCH_SPEED_KMH', '28'))

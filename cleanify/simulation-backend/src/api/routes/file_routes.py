@@ -34,12 +34,11 @@ def load_system(filename):
         repo = app.system_repository
         repo.set_state(system_state)
         
-        # Update singleton agent with latest state and invalidate cluster cache
+        # Update singleton agent with latest state and refresh distance cache
         agent = get_agent()
-        agent.bins_data = repo.get_bins()
-        agent.depot_data = repo.get_depots()
-        agent.invalidate_cluster_cache()
-        print(f"🔄 Updated agent state and invalidated cluster cache due to system load (agent_id={id(agent)})")
+        if agent:
+            agent.refresh_system_state(repo.get_bins(), repo.get_depots())
+            print(f"🔄 Updated agent state and warmed distance cache due to system load (agent_id={id(agent)})")
         
         print(f"System loaded from: {filename}")
         return jsonify({

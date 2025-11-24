@@ -4,10 +4,12 @@ from config.settings import Config
 from repositories.system_repository import SystemRepository
 from services import (
     WasteCollectionAgent,
-    ClusteringService,
     RoutingService,
     FileService,
-    ScheduleService
+    ScheduleService,
+    DistanceCacheService,
+    DispatchPlannerService,
+    OptimizationService
 )
 from services.external.osrm_service import OSRMService
 from .routes import (
@@ -37,10 +39,16 @@ def create_app(config: Config = None) -> Flask:
     app.agent = None
     # Create shared OSRM service instance to enable cross-service caching
     app.osrm_service = OSRMService(config)
-    app.clustering_service = ClusteringService(config, osrm_service=app.osrm_service)
     app.routing_service = RoutingService(config, osrm_service=app.osrm_service)
     app.file_service = FileService(config.SAVES_DIR)
     app.schedule_service = ScheduleService()
+    app.distance_cache = DistanceCacheService()
+    app.dispatch_planner = DispatchPlannerService(
+        config,
+        app.distance_cache,
+        app.system_repository,
+        OptimizationService()
+    )
     app.config_obj = config
     
     # Register blueprints

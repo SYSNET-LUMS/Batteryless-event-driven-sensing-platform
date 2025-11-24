@@ -1,9 +1,10 @@
 from .agent_service import WasteCollectionAgent
 from .traffic_service import TrafficManager
-from .clustering_service import ClusteringService
 from .routing_service import RoutingService
 from .file_service import FileService
 from .schedule_service import ScheduleService
+from .distance_cache_service import DistanceCacheService
+from .dispatch_planner_service import DispatchPlannerService
 
 # External services
 from .external.osrm_service import OSRMService
@@ -23,9 +24,10 @@ __all__ = [
     # Core services
     'WasteCollectionAgent',
     'TrafficManager', 
-    'ClusteringService',
     'RoutingService',
     'FileService',
+    'DistanceCacheService',
+    'DispatchPlannerService',
     
     # External services
     'OSRMService',

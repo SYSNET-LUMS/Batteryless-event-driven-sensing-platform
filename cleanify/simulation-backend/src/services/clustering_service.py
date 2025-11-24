@@ -1,238 +1,225 @@
 #!/usr/bin/env python3
+"""Geo-zone clustering for waste bins.
+
+The previous depot-radius implementation tightly coupled bin grouping to
+distance from depots. That logic produced brittle clusters whenever depots
+were missing, misconfigured, or geographically skewed. The new approach uses a
+grid/zone projection that is independent of depots and focuses on balancing
+collection workload.
+
+New behavior at a glance:
+• Project every bin into Web Mercator meters and snap it to a configurable
+    square zone (default 600 m).
+• All bins that fall inside the same zone form the base of a cluster.
+• Oversized zones are split into balanced slices capped at a configurable
+    number of bins.
+• Sparse zones (few bins or very low accumulated fill) are merged into the
+    nearest neighboring cluster to avoid under-utilized trips.
+
+This produces predictable, depot-agnostic clusters while still keeping nearby
+bins together for routing.
 """
-Proximity-based clustering for waste bins.
 
-Desired logic (as specified):
-- For each bin, compute distance to the nearest depot (supports multiple depots)
-- Per-bin radius = min(percentage * nearest-depot-distance, upper_cap)
-    • No lower cap
-    • If no depots exist, use a default radius for all bins
-- Connect two bins if either lies within the other's radius
-    • i.e., distance(i,j) <= max(radius_i, radius_j)
-- Clusters are connected components of this graph
-
-Creates geographically sensible clusters based on bin proximity.
-"""
-
+import math
 import os
+from collections import defaultdict
+from statistics import mean
 from typing import Dict, List, Optional, Tuple, Union
+
 from config.settings import Config
 from services.external.osrm_service import OSRMService
 from utils.distance import calculate_haversine_distance
 
+EARTH_RADIUS_M = 6378137.0
+
 
 class ClusteringService:
-    """
-    Proximity-based clustering service that creates geographically sensible clusters.
-    
-    Algorithm:
-    1. Calculate dynamic bin service radius based on depot proximity (requires at least one depot)
-    2. For each bin, find all nearby bins within its service radius
-    3. Group them into connected components (clusters)
-    4. Merge overlapping clusters automatically
-    
-    Each bin has a configurable service radius (1000-2000m range). Bins within
-    each other's service radius get clustered together. Clusters can grow to any size
-    as long as bins are connected through their service areas.
-    
-    This creates clusters where bins that are close to each other end up together,
-    which is much more intuitive than mathematical clustering approaches.
-    
-    Note: If no depots are provided, clustering will raise a ValueError.
-    """
-    
+    """Zone-based clustering service that balances workload without depot data."""
+
     def __init__(self, config: Optional[Config] = None, osrm_service: Optional[OSRMService] = None):
-        # Store optional services
+        # Store optional services for compatibility with existing call-sites
         self.config = config or Config()
         self.osrm_service = osrm_service
-        # Clustering parameters - read from environment variables with defaults
-        self.depot_distance_percentage = float(os.getenv('DEPOT_DISTANCE_PERCENTAGE', '0.35'))
-        # No lower bound; keep field for reference but do not apply
+
+        # Zone/grid parameters (all tunable via environment variables)
+        self.zone_size_m = max(50.0, float(os.getenv('CLUSTER_ZONE_SIZE_M', '600')))
+        self.max_cluster_bins = max(1, int(os.getenv('CLUSTER_MAX_BIN_COUNT', '12')))
+        self.min_cluster_bins = max(1, int(os.getenv('CLUSTER_MIN_BIN_COUNT', '2')))
+        if self.min_cluster_bins > self.max_cluster_bins:
+            self.min_cluster_bins = self.max_cluster_bins
+        self.min_cluster_fill_percent = max(0.0, float(os.getenv('CLUSTER_MIN_FILL_PERCENT', '20')))
+        self.merge_distance_multiplier = max(1.0, float(os.getenv('CLUSTER_MERGE_DISTANCE_MULTIPLIER', '1.5')))
+
+        # Legacy fields preserved for backward compatibility (no longer used directly)
+        self.depot_distance_percentage = float(os.getenv('DEPOT_DISTANCE_PERCENTAGE', '0.0'))
+        self.max_bin_radius_m = self.zone_size_m
         self.min_bin_radius_m = 0
-        self.max_bin_radius_m = float(os.getenv('MAX_BIN_RADIUS_M', '2000'))
-        self.debug_enabled = False  # Control debug output
-        # Log clustering configuration on initialization
-        print(f"📊 Clustering Configuration (from environment):")
-        print(f"   DEPOT_DISTANCE_PERCENTAGE: {self.depot_distance_percentage} ({self.depot_distance_percentage * 100}%)")
-        print(f"   MAX_BIN_RADIUS_M: {self.max_bin_radius_m}m")
+        self.debug_enabled = False
+
+        print("📊 Clustering Configuration (zone-based):")
+        print(f"   zone_size_m: {self.zone_size_m}m")
+        print(f"   max_cluster_bins: {self.max_cluster_bins}")
+        print(f"   min_cluster_bins: {self.min_cluster_bins}")
+        print(f"   min_cluster_fill_percent: {self.min_cluster_fill_percent}%")
     
     def create_simple_dynamic_clusters(self, bins_data: List[Dict], depot_data: Optional[Union[Dict, List[Dict]]] = None) -> Dict:
-        """
-        Create clusters using simple proximity logic:
-        1. For each bin, check if there's a nearby bin within radius
-        2. If yes, add to the same cluster 
-        3. If not, create new cluster for that bin
-        4. Handle edge cases and merge overlapping clusters
-        
-        Args:
-            bins_data: List of bin dictionaries with lat, lng, etc.
-            depot_data: Depot dictionary with lat, lng (optional)
-            
-        Returns:
-            Dictionary of clusters with cluster_id as key and list of bins as value
-        """
+        """Create geo-zone clusters. Depot data is ignored but accepted for compatibility."""
+
         try:
+            normalized_bins = self._normalize_bins(bins_data)
+
+            if len(normalized_bins) <= 1:
+                return {0: normalized_bins} if normalized_bins else {}
+
+            zone_map = self._bucket_bins(normalized_bins)
+            raw_clusters: List[List[Dict]] = []
+            for zone_bins in zone_map.values():
+                raw_clusters.extend(self._split_large_cluster(zone_bins))
+
+            balanced_clusters = self._merge_sparse_clusters(raw_clusters)
+            cleaned_clusters = {
+                idx: [self._strip_internal_fields(bin_data) for bin_data in cluster]
+                for idx, cluster in enumerate(balanced_clusters)
+            }
+
             if self.debug_enabled:
-                print("="*60)
-                print("CLUSTERING DEBUG START")
-                print("="*60)
-                
-                print(f"Input validation:")
-                print(f"  bins_data type: {type(bins_data)}")
-                print(f"  bins_data length: {len(bins_data) if bins_data else 'None'}")
-                print(f"  depot_data type: {type(depot_data)}")
-                print(f"  depot_data: {depot_data}")
-                
-                if bins_data:
-                    print(f"  First bin structure: {bins_data[0]}")
-                    print(f"  All bin IDs: {[b.get('id', 'NO_ID') for b in bins_data]}")
-                    
-                    # Validate bin data structure
-                    for i, bin_data in enumerate(bins_data):
-                        if not isinstance(bin_data, dict):
-                            print(f"ERROR: Bin {i} is not a dictionary: {type(bin_data)}")
-                        elif 'lat' not in bin_data or 'lng' not in bin_data or 'id' not in bin_data:
-                            print(f"ERROR: Bin {i} missing required fields: {bin_data}")
-            
-            if len(bins_data) <= 1:
-                if self.debug_enabled:
-                    print("Only 0-1 bins, returning simple clustering")
-                return {0: bins_data}
-            
-            # Calculate per-bin radii
-            if self.debug_enabled:
-                print("\nCALCULATING PER-BIN SERVICE RADII:")
-            bin_radii = self._compute_per_bin_radii(bins_data, depot_data)
-            if self.debug_enabled:
-                radii_values = list(bin_radii.values())
-                if radii_values:
-                    print(f"  Radii stats (m): min={min(radii_values):.1f}, max={max(radii_values):.1f}, avg={sum(radii_values)/len(radii_values):.1f}")
-            
-            # Proximity clustering using per-bin radii
-            if self.debug_enabled:
-                print("\nSTARTING PROXIMITY CLUSTERING:")
-            clusters = self._cluster_by_proximity_per_bin(bins_data, bin_radii)
-            
-            print(f"\nCLUSTERING RESULTS:")
-            print(f"  Created {len(clusters)} clusters")
-            
-            for cluster_id, cluster_bins in clusters.items():
-                bin_ids = [b['id'] for b in cluster_bins]
-                print(f"  Cluster {cluster_id}: {len(cluster_bins)} bins - {bin_ids}")
-                
-                if len(cluster_bins) > 1:
-                    # Calculate and log internal distances
-                    print(f"    Internal distances:")
-                    max_dist = 0
-                    for i in range(len(cluster_bins)):
-                        for j in range(i + 1, len(cluster_bins)):
-                            dist = calculate_haversine_distance(
-                                cluster_bins[i]['lat'], cluster_bins[i]['lng'],
-                                cluster_bins[j]['lat'], cluster_bins[j]['lng']
-                            )
-                            max_dist = max(max_dist, dist)
-                            print(f"      {cluster_bins[i]['id']} to {cluster_bins[j]['id']}: {dist:.1f}m")
-                    print(f"    Max internal distance: {max_dist:.1f}m")
-            
-            print("="*60)
-            print("CLUSTERING DEBUG END")
-            print("="*60)
-            
-            return clusters
-            
-        except Exception as e:
-            print(f"ERROR in create_simple_dynamic_clusters: {e}")
-            print(f"Exception type: {type(e)}")
+                print(f"Created {len(cleaned_clusters)} clusters across {len(zone_map)} zones")
+
+            return cleaned_clusters
+
+        except Exception as exc:  # pragma: no cover - defensive
+            print(f"ERROR in create_simple_dynamic_clusters: {exc}")
             import traceback
-            print(f"Traceback: {traceback.format_exc()}")
+            print(traceback.format_exc())
             return self._fallback_clustering(bins_data)
     
-    def _compute_per_bin_radii(self, bins_data: List[Dict], depot_data: Optional[Union[Dict, List[Dict]]]) -> Dict[str, float]:
-        """
-        Compute per-bin service radii based on nearest depot distance.
-        - Supports multiple depots; uses nearest.
-        - radius_i = min(percentage * nearest_distance_i, max_cap)
-        - No lower bound.
-        - If no depots, raises ValueError.
-        Returns dict: bin_id -> radius_m
-        """
-        # Normalize depot list
-        depots: List[Dict] = []
-        if depot_data:
-            if isinstance(depot_data, dict):
-                depots = [depot_data]
-            elif isinstance(depot_data, list):
-                depots = [d for d in depot_data if isinstance(d, dict) and 'lat' in d and 'lng' in d]
-        
-        if not depots:
-            raise ValueError("No depots provided. At least one depot is required for clustering.")
-        radii: Dict[str, float] = {}
-        
-        # Compute nearest depot distance per bin
-        for b in bins_data:
-            min_dist = float('inf')
-            for d in depots:
-                dist = calculate_haversine_distance(d['lat'], d['lng'], b['lat'], b['lng'])
-                if dist < min_dist:
-                    min_dist = dist
-            # Apply percentage and cap (no lower bound)
-            base = min_dist * self.depot_distance_percentage
-            r = min(base, float(self.max_bin_radius_m))
-            radii[b['id']] = r
-            if self.debug_enabled:
-                print(f"  Bin {b['id']}: nearest_depot={min_dist:.1f}m -> radius={r:.1f}m")
-        return radii
-    
-    def _cluster_by_proximity_per_bin(self, bins_data: List[Dict], bin_radii: Dict[str, float]) -> Dict:
-        """
-        Proximity clustering using per-bin radii.
-        Edge between i and j if distance(i,j) <= max(radius_i, radius_j).
-        Clusters are connected components.
-        """
-        n = len(bins_data)
-        if n == 0:
-            return {}
-        # Map id to index and back
-        id_to_idx: Dict[str, int] = {b['id']: i for i, b in enumerate(bins_data)}
-        idx_to_id: List[str] = [b['id'] for b in bins_data]
-        # Adjacency list
-        adj: List[List[int]] = [[] for _ in range(n)]
-        # Build edges (O(n^2))
-        for i in range(n):
-            bi = bins_data[i]
-            if bi['id'] not in bin_radii:
-                raise ValueError(f"Missing radius for bin {bi['id']}. Ensure depot data is provided and radii are computed.")
-            ri = bin_radii[bi['id']]
-            for j in range(i+1, n):
-                bj = bins_data[j]
-                if bj['id'] not in bin_radii:
-                    raise ValueError(f"Missing radius for bin {bj['id']}. Ensure depot data is provided and radii are computed.")
-                rj = bin_radii[bj['id']]
-                dist = calculate_haversine_distance(bi['lat'], bi['lng'], bj['lat'], bj['lng'])
-                if dist <= max(ri, rj):
-                    adj[i].append(j)
-                    adj[j].append(i)
-        # BFS/DFS to get components
-        visited = [False]*n
-        clusters: Dict[int, List[Dict]] = {}
-        cid = 0
-        for i in range(n):
-            if visited[i]:
+    # ------------------------------------------------------------------
+    # Helper utilities
+    # ------------------------------------------------------------------
+
+    def _normalize_bins(self, bins_data: List[Dict]) -> List[Dict]:
+        normalized: List[Dict] = []
+        for raw in bins_data or []:
+            if not isinstance(raw, dict):
                 continue
-            # Start new component
-            queue = [i]
-            visited[i] = True
-            comp_indices = []
-            while queue:
-                u = queue.pop()
-                comp_indices.append(u)
-                for v in adj[u]:
-                    if not visited[v]:
-                        visited[v] = True
-                        queue.append(v)
-            clusters[cid] = [bins_data[k] for k in comp_indices]
-            cid += 1
-        return clusters
+            lat = raw.get('lat') or raw.get('latitude') or raw.get('location', {}).get('latitude')
+            lng = raw.get('lng') or raw.get('longitude') or raw.get('location', {}).get('longitude')
+            bin_id = raw.get('id') or raw.get('bin_id')
+            if lat is None or lng is None or bin_id is None:
+                continue
+            copy = dict(raw)
+            copy['lat'] = lat
+            copy['lng'] = lng
+            copy['id'] = bin_id
+            normalized.append(copy)
+        return normalized
+
+    def _bucket_bins(self, bins_data: List[Dict]) -> Dict[Tuple[int, int], List[Dict]]:
+        zone_map: Dict[Tuple[int, int], List[Dict]] = defaultdict(list)
+        for bin_data in bins_data:
+            x_coord, y_coord = self._project_to_xy(bin_data['lat'], bin_data['lng'])
+            zone_key = (
+                int(math.floor(x_coord / self.zone_size_m)),
+                int(math.floor(y_coord / self.zone_size_m))
+            )
+            enriched = dict(bin_data)
+            enriched['_xy'] = (x_coord, y_coord)
+            enriched['_zone_key'] = zone_key
+            zone_map[zone_key].append(enriched)
+        return zone_map
+
+    def _split_large_cluster(self, cluster_bins: List[Dict]) -> List[List[Dict]]:
+        if len(cluster_bins) <= self.max_cluster_bins:
+            return [cluster_bins]
+
+        # Sort by fill level so that each split remains balanced by urgency
+        sorted_bins = sorted(
+            cluster_bins,
+            key=lambda b: b.get('fillLevel', 0),
+            reverse=True
+        )
+        chunks: List[List[Dict]] = []
+        for start in range(0, len(sorted_bins), self.max_cluster_bins):
+            chunks.append(sorted_bins[start:start + self.max_cluster_bins])
+        return chunks
+
+    def _merge_sparse_clusters(self, clusters: List[List[Dict]]) -> List[List[Dict]]:
+        if not clusters:
+            return []
+
+        dense: List[List[Dict]] = []
+        sparse: List[List[Dict]] = []
+        for cluster in clusters:
+            if self._is_sparse_cluster(cluster):
+                sparse.append(cluster)
+            else:
+                dense.append(cluster)
+
+        if not dense and sparse:
+            dense.append(sparse.pop(0))
+
+        for cluster in sparse:
+            target_index = self._nearest_cluster_index(cluster, dense)
+            if target_index is None:
+                dense.append(cluster)
+            else:
+                dense[target_index].extend(cluster)
+
+        return dense
+
+    def _is_sparse_cluster(self, cluster: List[Dict]) -> bool:
+        if not cluster:
+            return True
+        if len(cluster) < self.min_cluster_bins:
+            return True
+        fill_pct = self._cluster_fill_percentage(cluster)
+        return fill_pct < self.min_cluster_fill_percent
+
+    def _cluster_fill_percentage(self, cluster: List[Dict]) -> float:
+        total_capacity = sum(bin_data.get('capacity', 500) for bin_data in cluster)
+        if total_capacity == 0:
+            return 0.0
+        total_fill = 0.0
+        for bin_data in cluster:
+            fill_level = bin_data.get('fillLevel')
+            if fill_level is None and 'current_fill' in bin_data and bin_data.get('capacity'):
+                fill_level = (bin_data['current_fill'] / bin_data['capacity']) * 100
+            total_fill += (fill_level or 0) / 100 * bin_data.get('capacity', 500)
+        return (total_fill / total_capacity) * 100
+
+    def _nearest_cluster_index(self, source: List[Dict], targets: List[List[Dict]]) -> Optional[int]:
+        if not targets:
+            return None
+        source_center = self._cluster_centroid(source)
+        best_idx = None
+        best_distance = float('inf')
+        for idx, cluster in enumerate(targets):
+            target_center = self._cluster_centroid(cluster)
+            distance = math.dist(source_center, target_center)
+            if distance < best_distance:
+                best_distance = distance
+                best_idx = idx
+        # Require the nearest dense cluster to be within a reasonable distance
+        max_distance = self.zone_size_m * self.merge_distance_multiplier
+        return best_idx if best_distance <= max_distance else None
+
+    def _cluster_centroid(self, cluster: List[Dict]) -> Tuple[float, float]:
+        xs = [bin_data['_xy'][0] for bin_data in cluster]
+        ys = [bin_data['_xy'][1] for bin_data in cluster]
+        return (mean(xs), mean(ys))
+
+    def _project_to_xy(self, lat: float, lng: float) -> Tuple[float, float]:
+        lat_rad = math.radians(lat)
+        lng_rad = math.radians(lng)
+        x = EARTH_RADIUS_M * lng_rad
+        y = EARTH_RADIUS_M * math.log(math.tan(math.pi / 4 + lat_rad / 2))
+        return x, y
+
+    def _strip_internal_fields(self, bin_data: Dict) -> Dict:
+        clean = dict(bin_data)
+        clean.pop('_xy', None)
+        clean.pop('_zone_key', None)
+        return clean
     
     def _fallback_clustering(self, bins_data: List[Dict]) -> Dict:
         """Simple fallback - each bin becomes its own cluster."""
@@ -243,92 +230,112 @@ class ClusteringService:
         return clusters
 
     def get_clustering_info(self, bins_data: List[Dict], depot_data: Optional[Dict] = None) -> Dict:
-        """Get information about the clustering approach for this data."""
-        radii = self._compute_per_bin_radii(bins_data, depot_data)
-        radii_list = list(radii.values())
-        depot_distances: List[float] = []
-        depots: List[Dict] = []
-        if depot_data:
-            if isinstance(depot_data, dict):
-                depots = [depot_data]
-            elif isinstance(depot_data, list):
-                depots = depot_data
-        if depots:
-            for b in bins_data:
-                nearest = min(calculate_haversine_distance(d['lat'], d['lng'], b['lat'], b['lng']) for d in depots)
-                depot_distances.append(nearest)
+        """Return descriptive statistics for the current geo-zone strategy."""
+
+        normalized_bins = self._normalize_bins(bins_data)
+        zone_map = self._bucket_bins(normalized_bins)
+        cluster_sizes = [len(cluster) for cluster in zone_map.values()]
+
         info = {
-            'approach': 'Per-bin Proximity Clustering',
-            'per_bin_radius_m': {
-                'min_m': min(radii_list) if radii_list else None,
-                'max_m': max(radii_list) if radii_list else None,
-                'avg_m': sum(radii_list)/len(radii_list) if radii_list else None,
-            },
-            'depot_distance_percentage': self.depot_distance_percentage * 100,
-            'max_bin_radius_m': self.max_bin_radius_m,
-            'depot_distances': {
-                'min_m': min(depot_distances) if depot_distances else None,
-                'max_m': max(depot_distances) if depot_distances else None,
-                'avg_m': sum(depot_distances) / len(depot_distances) if depot_distances else None
-            },
-            'has_depot_data': bool(depots)
+            'approach': 'Geo-Zone Workload Clustering',
+            'zone_size_m': self.zone_size_m,
+            'zone_count': len(zone_map),
+            'max_cluster_bins': self.max_cluster_bins,
+            'min_cluster_bins': self.min_cluster_bins,
+            'min_cluster_fill_percent': self.min_cluster_fill_percent,
+            'average_bins_per_zone': (sum(cluster_sizes) / len(cluster_sizes)) if cluster_sizes else 0,
+            'has_depot_data': depot_data is not None,
         }
-        # Backward-compatibility for callers expecting old keys
-        if radii_list:
-            info['dynamic_threshold_m'] = info['per_bin_radius_m']['avg_m']
-            info['min_threshold_m'] = info['per_bin_radius_m']['min_m']
-            info['max_threshold_m'] = info['per_bin_radius_m']['max_m']
-        else:
-            info['dynamic_threshold_m'] = None
-            info['min_threshold_m'] = None
-            info['max_threshold_m'] = None
+
+        # Compatibility keys for existing dashboards/logs
+        info['dynamic_threshold_m'] = self.zone_size_m
+        info['min_threshold_m'] = self.zone_size_m
+        info['max_threshold_m'] = self.zone_size_m
+        info['depot_distance_percentage'] = 0.0
+        info['per_bin_radius_m'] = None
+        info['depot_distances'] = None
+
         return info
     
     def get_cluster_info(self, clusters: Dict) -> Dict:
-        """Get cluster information in expected format."""
-        cluster_info = {}
-        
+        """Summaries plus quality metrics for each cluster."""
+
+        cluster_info: Dict = {}
         for cluster_id, cluster_bins in clusters.items():
             if not cluster_bins:
                 continue
-                
-            # Calculate cluster center
+
             center_lat = sum(bin_data['lat'] for bin_data in cluster_bins) / len(cluster_bins)
             center_lng = sum(bin_data['lng'] for bin_data in cluster_bins) / len(cluster_bins)
-            
-            # Calculate cluster radius (max distance from center)
-            max_distance = 0
+            max_distance = 0.0
+            avg_distance = 0.0
+            pair_count = 0
+
             for bin_data in cluster_bins:
                 distance = calculate_haversine_distance(
-                    center_lat, center_lng,
-                    bin_data['lat'], bin_data['lng']
+                    center_lat,
+                    center_lng,
+                    bin_data['lat'],
+                    bin_data['lng']
                 )
                 max_distance = max(max_distance, distance)
-            
+
+            # Compute average pairwise distance for a simple compactness proxy
+            if len(cluster_bins) > 1:
+                total = 0.0
+                for i in range(len(cluster_bins)):
+                    for j in range(i + 1, len(cluster_bins)):
+                        total += calculate_haversine_distance(
+                            cluster_bins[i]['lat'], cluster_bins[i]['lng'],
+                            cluster_bins[j]['lat'], cluster_bins[j]['lng']
+                        )
+                        pair_count += 1
+                avg_distance = total / pair_count if pair_count else 0.0
+
+            quality_metrics = self._build_quality_metrics(cluster_bins, max_distance, avg_distance)
+
             cluster_info[cluster_id] = {
                 'size': len(cluster_bins),
                 'center': {'lat': center_lat, 'lng': center_lng},
                 'radius_m': max_distance,
-                'bin_ids': [bin_data['id'] for bin_data in cluster_bins]
+                'bin_ids': [bin_data['id'] for bin_data in cluster_bins],
+                'quality_metrics': quality_metrics
             }
-        
+
         return cluster_info
+
+    def _build_quality_metrics(self, cluster_bins: List[Dict], radius_m: float, avg_distance: float) -> Dict:
+        if not cluster_bins:
+            return {'quality_rating': 'unknown'}
+
+        compactness_denominator = max(self.zone_size_m * self.merge_distance_multiplier, 1.0)
+        compactness_score = max(0.0, 1.0 - (radius_m / compactness_denominator))
+        load_balance_score = min(1.0, len(cluster_bins) / self.max_cluster_bins)
+        coverage_score = min(1.0, len(cluster_bins) / max(1, self.min_cluster_bins))
+        efficiency = max(0.0, 1.0 - (avg_distance / (self.zone_size_m * 2 or 1))) if avg_distance else 1.0
+
+        composite = (compactness_score * 0.5) + (load_balance_score * 0.3) + (efficiency * 0.2)
+        if composite >= 0.8:
+            rating = 'excellent'
+        elif composite >= 0.6:
+            rating = 'good'
+        elif composite >= 0.4:
+            rating = 'fair'
+        else:
+            rating = 'sparse'
+
+        return {
+            'quality_rating': rating,
+            'compactness_score': round(compactness_score, 2),
+            'load_balance_score': round(load_balance_score, 2),
+            'coverage_score': round(coverage_score, 2),
+            'collection_efficiency': round(efficiency, 2)
+        }
 
     # Main public method
     def create_clusters(self, bins_data: List[Dict], depot_data: Optional[Dict] = None) -> Dict:
-        """
-        Create clusters using proximity-based logic.
-        
-        Args:
-            bins_data: List of bin dictionaries with lat, lng, etc.
-            depot_data: Depot dictionary with lat, lng (optional)
-            
-        Returns:
-            Dictionary of clusters with cluster_id as key and list of bins as value
-        """
         return self.create_simple_dynamic_clusters(bins_data, depot_data)
 
     # Legacy method names for backward compatibility
     def create_adaptive_clusters(self, bins_data: List[Dict]) -> Dict:
-        """Legacy method - uses proximity clustering."""
         return self.create_simple_dynamic_clusters(bins_data, None)

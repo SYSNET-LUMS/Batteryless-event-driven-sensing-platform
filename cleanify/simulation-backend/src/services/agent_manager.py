@@ -1,6 +1,6 @@
 """
-Agent Manager - Singleton pattern to ensure only one WasteCollectionAgent instance exists
-This prevents clustering cache loss during high-speed simulation by maintaining the same agent instance
+Agent Manager - Singleton pattern to ensure only one WasteCollectionAgent instance exists.
+Keeping a single agent preserves distance cache state during high-speed simulation runs.
 """
 
 from typing import Optional

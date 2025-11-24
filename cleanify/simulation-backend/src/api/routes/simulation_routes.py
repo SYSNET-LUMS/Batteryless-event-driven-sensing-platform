@@ -128,11 +128,6 @@ def start_simulation():
         agent.bins_data = repo.get_bins()
         agent.depot_data = repo.get_depots()
         
-        # Initialize clusters once at simulation start
-        print("🔄 Initializing clusters at simulation start...")
-        clusters = agent.get_clusters(agent.bins_data, agent.depot_data)
-        print(f"✅ Clusters initialized: {len(clusters)} clusters for {len(agent.bins_data)} bins")
-        
         # Mark simulation as started
         agent.simulation_started = True
         print(f"✅ Simulation started - agent_id={id(agent)}")
@@ -272,14 +267,6 @@ def simulation_step():
                                     'Moderate' if tm.get_density_at_time(current_time_min) > 2 else 'Light'
                 }
         
-        # Update clusters if needed
-        clusters_data = {}
-        if len(bins) >= 2 and agent:
-            clusters = agent.get_or_create_clusters(bins)
-            for cluster_id, cluster_bins in clusters.items():
-                for bin_data in cluster_bins:
-                    clusters_data[bin_data['id']] = [b['id'] for b in cluster_bins]
-        
         # Get current collection queue from agent
         collection_queue_ids = []
         if agent and hasattr(agent, 'collection_queue'):
@@ -291,7 +278,6 @@ def simulation_step():
             "bins_hit_threshold": bins_that_hit_threshold,
             "updated_urgencies": {},
             "traffic_info": traffic_info,
-            "clusters": clusters_data,
             "reserved_bins": list(agent.reserved_bins) if agent else [],
             "waiting_assignments": len(agent.waiting_assignments) if agent else 0,
             "schedule_dispatches": schedule_dispatches,

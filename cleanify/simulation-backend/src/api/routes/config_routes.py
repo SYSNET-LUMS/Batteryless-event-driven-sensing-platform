@@ -17,8 +17,12 @@ def get_config():
                 "default_bin_capacity": config.DEFAULT_BIN_CAPACITY,
                 "default_truck_capacity": config.DEFAULT_TRUCK_CAPACITY,
                 "default_fill_rate": config.DEFAULT_FILL_RATE,
-                "cluster_eps_meters": config.CLUSTER_EPS_METERS,
-                "cluster_min_samples": config.CLUSTER_MIN_SAMPLES
+                "use_distance_dispatch": config.USE_DISTANCE_DISPATCH,
+                "dispatch_nearby_radius_m": config.DISPATCH_NEARBY_RADIUS_M,
+                "dispatch_cooldown_min": config.DISPATCH_COOLDOWN_MIN,
+                "dispatch_max_route_bins": config.DISPATCH_MAX_ROUTE_BINS,
+                "dispatch_capacity_buffer_percent": config.DISPATCH_CAPACITY_BUFFER_PERCENT,
+                "dispatch_speed_kmh": config.DISPATCH_SPEED_KMH
             }
         })
         

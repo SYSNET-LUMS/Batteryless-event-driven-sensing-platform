@@ -1,17 +1,19 @@
 from typing import Dict, List, Optional, Any
+from config.settings import Config
+from repositories.system_repository import get_system_repository
 from services.simulation.decision_service import DecisionService
 from services.simulation.simulation_service import SimulationService
-from services.clustering_service import ClusteringService
 from services.external.osrm_service import OSRMService
 from services.external.vroom_service import VROOMService
 from services.routing.optimization_service import OptimizationService
-from services.proactive_cluster_dispatch_service import ProactiveClusterDispatchService
+from services.distance_cache_service import DistanceCacheService
+from services.dispatch_planner_service import DispatchPlannerService
 import logging
 
 logger = logging.getLogger(__name__)
 
 class WasteCollectionAgent:
-    """Main coordination layer with VROOM-powered optimization and simple dynamic clustering"""
+    """Main coordination layer with VROOM-powered optimization and distance-based dispatch"""
     
     def __init__(self, api_key: Optional[str] = None):
         import traceback
@@ -21,8 +23,9 @@ class WasteCollectionAgent:
             print(f"  {line.strip()}")
         
         self.api_key = api_key
+        self.config = Config()
+        self.system_repository = get_system_repository()
         self.bins_data = []
-        self.depot_data = []  # Keep latest depots list for clustering
         self.simulation_started = False  # Track if simulation has started
         
         # Initialize modular services with VROOM
@@ -30,25 +33,19 @@ class WasteCollectionAgent:
         self.vroom_service = VROOMService()
         self.optimization_service = OptimizationService(self.vroom_service)
         self.simulation_service = SimulationService(self.osrm_service)
-        self.clustering_service = ClusteringService(osrm_service=self.osrm_service)
+        self.distance_cache = DistanceCacheService()
+        self.dispatch_planner = DispatchPlannerService(
+            self.config,
+            self.distance_cache,
+            self.system_repository,
+            self.optimization_service
+        )
         
-        # Initialize decision service with clustering callback to use our cached clusters
+        # Initialize decision service without clustering dependency
         self.decision_service = DecisionService(
-            self.optimization_service, 
-            self.vroom_service,
-            clustering_callback=self.get_clusters  # Pass our cached clustering method
+            self.optimization_service,
+            self.vroom_service
         )
-        
-        # Initialize proactive cluster dispatch service with shared clustering callback
-        self.proactive_dispatch = ProactiveClusterDispatchService(
-            self.clustering_service,
-            clustering_callback=self.get_clusters  # Pass our cached clustering method
-        )
-        
-        # Cache for clusters - improved caching system
-        self.cached_clusters = None
-        self.cached_bin_count = 0
-        self.cached_bin_positions_hash = None  # Hash of bin positions for cache invalidation
 
         # Simple in-memory queue of bin IDs prioritized for collection
         # This queue is rebuilt on each routing cycle based on urgency and recency
@@ -81,9 +78,8 @@ class WasteCollectionAgent:
             filtered_bin_ids = set(self.collection_queue) & dispatch_bin_ids
 
             # Provide active assignments for duplicate-dispatch filtering
-            active_assignments = self.proactive_dispatch.get_active_assignments()
             routing_result = self.decision_service.get_routing_decision(
-                {**data, "preferred_bin_ids": filtered_bin_ids, "active_cluster_assignments": active_assignments}, current_time
+                    {**data, "preferred_bin_ids": filtered_bin_ids}, current_time
             )
             
             # Ensure all dispatched bins are properly tracked in collection queue
@@ -94,183 +90,89 @@ class WasteCollectionAgent:
             return {"error": f"Decision type not supported: {decision_type}"}
     
     def get_optimization_status(self) -> Dict:
-        """Get current optimization system status including clustering information"""
+        """Get current optimization system status for distance-based dispatch."""
         status = {
             "vroom_available": self.vroom_service.is_service_available(),
             "osrm_available": self.osrm_service.is_service_available(),
             "optimization_stack": [
-                "Simple Dynamic Clustering",
-                "Knapsack Algorithm", 
+                "Distance-Based Dispatch Planner",
+                "Knapsack Algorithm",
                 "VROOM Routing" if self.vroom_service.is_service_available() else "Fallback Assignment"
             ],
-            "assignment_method": "VROOM (no manual tracking)"
+            "assignment_method": "VROOM (no manual tracking)",
+            "distance_dispatch_enabled": True
         }
-        
-        # Add clustering information if bins data is available
+
         if self.bins_data:
             try:
-                # Use latest depot data if available for info
-                clustering_info = self.clustering_service.get_clustering_info(self.bins_data, getattr(self, 'depot_data', None))
-                status["clustering_info"] = {
-                    "approach": clustering_info['approach'],
-                    "dynamic_threshold_m": clustering_info['dynamic_threshold_m'],
-                    "depot_distance_percentage": clustering_info['depot_distance_percentage'],
-                    "threshold_bounds": f"{clustering_info['min_threshold_m']}-{clustering_info['max_threshold_m']}m",
-                    "has_depot_data": clustering_info['has_depot_data']
+                depots = self.system_repository.get_depots()
+                self.distance_cache.ensure_cache(self.bins_data, depots)
+                status["distance_cache"] = {
+                    "bins_indexed": len(self.distance_cache.list_bins()),
+                    "depots_indexed": len(self.distance_cache.list_depots())
                 }
             except Exception as e:
-                logger.warning(f"Could not get clustering analysis: {e}")
-        
+                logger.warning(f"Could not build distance cache status: {e}")
+
         return status
     
     def calculate_urgency_score(self, bin_data: Dict, nearest_truck_data: Optional[Dict] = None, 
                                context: Optional[Dict] = None) -> Dict:
         """Calculate urgency score using optimization service"""
-        cluster_bins = context.get('cluster_bins') if context else None
-        return self.optimization_service.calculate_urgency_score(bin_data, cluster_bins)
+        neighbor_bins = context.get('neighbor_bins') if context else None
+        return self.optimization_service.calculate_urgency_score(bin_data, neighbor_bins)
     
-    def collect_bins_from_cluster(self, target_bin: Dict, cluster_bins: List[Dict], 
-                                 truck_capacity: float, current_load: float,
-                                 simulation_time: Optional[float] = None) -> List[Dict]:
-        """Get optimal bin collection from cluster (still used for individual collections)"""
-        return self.decision_service.get_cluster_collection_decision(
-            target_bin, cluster_bins, truck_capacity, current_load, simulation_time or 0.0
-        )
-    
-    def handle_bin_reached_dt_with_cluster_optimization(self, trigger_bin: Dict, 
-                                                       all_bins: List[Dict],
-                                                       all_trucks: List[Dict],
-                                                       current_time: float) -> Dict:
-        """
-        Enhanced bin DT handling with proactive cluster management.
-        
-        This method prevents redundant truck dispatches by:
-        1. Checking if trigger bin's cluster already has an assigned truck
-        2. Adding nearby cluster bins to collection queue proactively  
-        3. Estimating truck capacity to avoid over-dispatching
-        
-        Returns:
-            Dict with dispatch decision and queue updates
-        """
+    def plan_distance_dispatch_for_bin(self, bin_id: str, current_time: float) -> Dict:
+        """Convenience wrapper over the dispatch planner for external callers."""
+        return self.dispatch_planner.plan_dispatch_for_bin(bin_id, current_time)
+
+    def refresh_system_state(self, bins: List[Dict], depots: List[Dict]):
+        """Update cached system records and rebuild distance cache after file loads."""
+        self.bins_data = list(bins or [])
+        self.simulation_started = False
         try:
-            # Process with proactive cluster dispatch service
-            cluster_decision = self.proactive_dispatch.process_bin_reached_dt(
-                trigger_bin, all_bins, all_trucks, current_time, self.collection_queue
-            )
-            
-            # Update collection queue with additional bins
-            additional_bins = cluster_decision.get('additional_bins_for_queue', [])
-            if additional_bins:
-                # Add new bins to queue (avoid duplicates)
-                existing_queue_set = set(self.collection_queue)
-                new_bins = [bin_id for bin_id in additional_bins if bin_id not in existing_queue_set]
-                self.collection_queue.extend(new_bins)
-                
-                logger.info(f"Added {len(new_bins)} proactive bins to collection queue for cluster containing {trigger_bin['id']}")
-            
-            # Clean up stale assignments
-            self.proactive_dispatch.clear_stale_assignments(current_time)
-            
+            self.distance_cache.warm_cache(self.bins_data, depots or [])
+        except Exception as exc:
+            logger.warning(f"Failed to warm distance cache during system refresh: {exc}")
+
+    def handle_bin_reached_dt(self, trigger_bin: Dict,
+                              all_bins: List[Dict],
+                              all_trucks: List[Dict],
+                              current_time: float) -> Dict:
+        """Distance-only DT handler kept for backward compatibility with route signatures."""
+        try:
+            plan = self.plan_distance_dispatch_for_bin(trigger_bin['id'], current_time)
             return {
-                'dispatch_recommendation': cluster_decision.get('dispatch_recommendation', 'dispatch'),
-                'assigned_truck_id': cluster_decision.get('assigned_truck_id'),
-                'estimated_capacity_after': cluster_decision.get('estimated_capacity_after'),
-                'proactive_bins_added': len(additional_bins),
-                'reason': cluster_decision.get('reason', 'Standard dispatch'),
-                'updated_queue_size': len(self.collection_queue)
+                'dispatch_recommendation': 'dispatch' if plan.get('status') == 'success' else plan.get('status'),
+                'assigned_truck_id': plan.get('truck_id'),
+                'reason': plan.get('reason'),
+                'distance_km': plan.get('distance_km'),
+                'eta_minutes': plan.get('eta_minutes'),
+                'selected_bins': plan.get('selected_bins'),
+                'plan': plan,
+                'mode': 'distance_dispatch'
             }
-            
         except Exception as e:
-            logger.error(f"Error in enhanced DT handling: {e}")
-            # Fallback to normal dispatch
+            logger.error(f"Error in distance dispatch planning: {e}")
             return {
-                'dispatch_recommendation': 'dispatch',
+                'dispatch_recommendation': 'error',
                 'assigned_truck_id': None,
-                'estimated_capacity_after': None,
-                'proactive_bins_added': 0,
-                'reason': f'Fallback dispatch due to error: {e}',
-                'updated_queue_size': len(self.collection_queue)
+                'reason': str(e),
+                'mode': 'distance_dispatch'
             }
-    
+
     def update_truck_assignment_status(self, truck_id: str, status: str):
-        """Update truck assignment status for proactive dispatch tracking"""
-        try:
-            self.proactive_dispatch.update_truck_assignments({
-                truck_id: {'status': status}
-            })
-        except Exception as e:
-            logger.warning(f"Error updating truck assignment status: {e}")
-    
+        """No-op placeholder kept for backward compatibility with legacy endpoints."""
+        logger.info(f"Ignoring truck assignment status update for {truck_id} → {status}; clustering removed.")
+
     def get_proactive_dispatch_status(self) -> Dict:
-        """Get status of proactive dispatch system"""
-        try:
-            return {
-                'active_assignments': self.proactive_dispatch.get_active_assignments(),
-                'collection_queue_size': len(self.collection_queue),
-                'proactive_dispatch_enabled': True
-            }
-        except Exception as e:
-            logger.error(f"Error getting proactive dispatch status: {e}")
-            return {
-                'active_assignments': {},
-                'collection_queue_size': len(self.collection_queue),
-                'proactive_dispatch_enabled': False,
-                'error': str(e)
-            }
-    
-    def get_clusters(self, bins_data: List[Dict], depot_data: Optional[List[Dict]] = None) -> Dict:
-        """
-        Get cached clusters - clusters are calculated ONCE at simulation start and never recalculated.
-        
-        For filtered bin subsets, returns the full cached clusters (not recalculated).
-        The caller is responsible for filtering clusters if needed.
-        """
-        
-        # If clusters are already cached, return them immediately (no recalculation)
-        if self.cached_clusters is not None:
-            return self.cached_clusters
-        
-        # First time: calculate clusters with ALL bins
-        import traceback
-        print(f"🔄 AGENT: Calculating clusters for the FIRST TIME - agent_id={id(self)}")
-        print(f"📍 Cluster calculation triggered from:")
-        for line in traceback.format_stack()[-5:-1]:
-            print(f"  {line.strip()}")
-        
-        # Use per-bin proximity clustering with full depot list if available
-        depots = depot_data if depot_data is not None else getattr(self, 'depot_data', None)
-        self.cached_clusters = self.clustering_service.create_simple_dynamic_clusters(bins_data, depots)
-        self.cached_bin_count = len(bins_data)
-        
-        # Log clustering results
-        logger.info(f"✅ Created {len(self.cached_clusters)} clusters for {len(bins_data)} bins (will be reused for entire simulation)")
-        cluster_info = self.clustering_service.get_cluster_info(self.cached_clusters)
-        
-        for cluster_id, info in cluster_info.items():
-            quality = info.get('quality_metrics', {})
-            logger.debug(f"Cluster {cluster_id}: {info['bin_ids']} - {quality.get('quality_rating', 'unknown')} quality")
-                
-        return self.cached_clusters
-    
-    # Legacy method name for compatibility
-    def get_or_create_clusters(self, bins_data: List[Dict]) -> Dict:
-        """Legacy method - redirects to enhanced get_clusters"""
-        return self.get_clusters(bins_data)
-    
-    def invalidate_cluster_cache(self):
-        """
-        Invalidate cluster cache - ONLY call when loading a new system or resetting simulation.
-        Do NOT call during active simulation.
-        """
-        import traceback
-        print(f"🔄 AGENT: Invalidating cluster cache (system load/reset) - agent_id={id(self)}")
-        print(f"📍 Cache invalidation called from:")
-        for line in traceback.format_stack()[-5:-1]:
-            print(f"  {line.strip()}")
-        
-        self.cached_clusters = None
-        self.cached_bin_count = 0
-        self.simulation_started = False  # Reset simulation state
+        """Return a simplified status block noting that distance dispatch is active."""
+        return {
+            'active_assignments': {},
+            'collection_queue_size': len(self.collection_queue),
+            'proactive_dispatch_enabled': False,
+            'mode': 'distance_dispatch'
+        }
     
     def calculate_dynamic_threshold(self, bin_data: Dict, simulation_time_seconds: float, 
                                    depot_data: Optional[Dict] = None) -> float:
@@ -365,13 +267,13 @@ class WasteCollectionAgent:
 
     def _rebuild_collection_queue(self, current_time: float) -> None:
         """
-        Enhanced queue rebuild with proactive cluster recommendations.
+        Rebuild the collection queue using distance-based urgency only.
 
         Rules:
         - Exclude bins collected in the last 30 minutes
         - Exclude bins with < 15% fill (fuel saving)
         - Prioritize by: overflow/critical -> above threshold -> urgency score
-        - Include proactive cluster recommendations
+        - No clustering or proactive grouping logic
         """
         try:
             bins = list(self.bins_data) if self.bins_data else []
@@ -412,52 +314,18 @@ class WasteCollectionAgent:
             # Build initial queue
             initial_queue = [b['id'] for b in candidates[:50]]
 
-            # Exclude bins whose clusters already have an active truck assignment
-            try:
-                if hasattr(self, 'proactive_dispatch') and initial_queue:
-                    clusters = self.get_or_create_clusters(bins)
-                    # Create reverse map: bin_id -> cluster_id
-                    bin_to_cluster = {}
-                    for cid, c_bins in clusters.items():
-                        for b in c_bins:
-                            bin_to_cluster[b['id']] = str(cid)
-                    active_clusters = set(self.proactive_dispatch.get_active_assignments().keys())
-                    filtered_queue = []
-                    for bid in initial_queue:
-                        cid = bin_to_cluster.get(bid)
-                        if cid and cid in active_clusters:
-                            continue
-                        filtered_queue.append(bid)
-                    initial_queue = filtered_queue
-            except Exception as e:
-                logger.warning(f"Failed to filter queue by active cluster assignments: {e}")
-            
-            # Get proactive cluster recommendations
-            try:
-                proactive_recommendations = self.proactive_dispatch.recommend_collection_queue_updates(
-                    initial_queue, bins, current_time
-                )
-                
-                # Add proactive recommendations
-                proactive_additions = proactive_recommendations.get('additions', [])
-                if proactive_additions:
-                    # Combine and deduplicate
-                    combined_queue = initial_queue + proactive_additions
-                    self.collection_queue = list(dict.fromkeys(combined_queue))  # Preserve order, remove duplicates
-                    
-                    logger.info(f"Added {len(proactive_additions)} proactive bins to queue. "
-                              f"Total queue size: {len(self.collection_queue)}")
-                else:
-                    self.collection_queue = initial_queue
-                    
-            except Exception as e:
-                logger.warning(f"Error getting proactive recommendations, using basic queue: {e}")
-                self.collection_queue = initial_queue
+            # Distance-based prioritization: rely solely on urgency ordering
+            seen = set()
+            ordered_queue: List[str] = []
+            for bin_id in initial_queue:
+                if bin_id in seen:
+                    continue
+                seen.add(bin_id)
+                ordered_queue.append(bin_id)
+            self.collection_queue = ordered_queue
                 
         except Exception as e:
             logger.error(f"Error rebuilding collection queue: {e}")
-            # On any error, clear queue to avoid blocking
-            self.collection_queue = []
             # On any error, clear queue to avoid blocking
             self.collection_queue = []
     

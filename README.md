@@ -1,6 +1,6 @@
 # Cleanify - Smart Waste Collection System
 
-AI-powered waste collection system with intelligent routing, clustering optimization, and real-time simulation.
+AI-powered waste collection system with distance-based routing, urgency scoring, and real-time simulation.
 
 ## Project Structure
 
@@ -48,25 +48,34 @@ Open `cleanify/simulation-playground/index.html` in your browser.
 
 ## Environment Configuration
 
-### Clustering Parameters
+### Distance Dispatch Parameters
 
-Control how bins are grouped for efficient collection:
+Distance-only dispatch is tuned via the following environment variables:
 
 ```env
-# Percentage of depot distance for bin service radius (0.0-1.0)
-DEPOT_DISTANCE_PERCENTAGE=0.35
+# Enable/disable the distance planner (leave enabled unless debugging)
+USE_DISTANCE_DISPATCH=True
 
-# Maximum bin service radius in meters
-MAX_BIN_RADIUS_M=2000
+# Radius (meters) for tagging "nearby" bins during opportunistic pickups
+DISPATCH_NEARBY_RADIUS_M=1500
 
-# Default radius when no depot available
-DEFAULT_BIN_RADIUS_M=1400
+# Minutes a bin stays protected after collection to avoid re-dispatch
+DISPATCH_COOLDOWN_MIN=30
+
+# Upper bound on bins per generated route
+DISPATCH_MAX_ROUTE_BINS=10
+
+# Percent of truck capacity kept in reserve (safety margin)
+DISPATCH_CAPACITY_BUFFER_PERCENT=5
+
+# Average driving speed (km/h) used for ETA estimates
+DISPATCH_SPEED_KMH=28
+
+# Optional urgency-score weights (higher = more influence)
+URGENCY_WEIGHT_FILL=0.5
+URGENCY_WEIGHT_RATE=0.3
+URGENCY_WEIGHT_TIME=0.2
 ```
-
-**How it works:**
-- Each bin gets a service radius based on distance to nearest depot
-- Bins within each other's radius form a cluster
-- Trucks collect entire clusters efficiently
 
 ### Server & Services
 
@@ -88,42 +97,30 @@ VROOM_FALLBACK_ENABLED=True
 
 ### Tuning for Different Scenarios
 
-**Urban Dense Areas** (many bins close together):
-```env
-DEPOT_DISTANCE_PERCENTAGE=0.30
-MAX_BIN_RADIUS_M=1500
-DEFAULT_BIN_RADIUS_M=1200
-```
+| Scenario | Recommended Tweaks |
+| --- | --- |
+| **Urban core** | Lower `DISPATCH_NEARBY_RADIUS_M` (≤1000) to keep trips short. |
+| **Suburban** | Default radius (1500) with standard urgency weights. |
+| **Rural / spread out** | Increase `DISPATCH_NEARBY_RADIUS_M` (2000+) and bump `URGENCY_WEIGHT_TIME` to favor stale bins. |
 
-**Suburban Areas** (balanced):
-```env
-DEPOT_DISTANCE_PERCENTAGE=0.35
-MAX_BIN_RADIUS_M=2000
-DEFAULT_BIN_RADIUS_M=1400
-```
-
-**Rural Areas** (bins spread out):
-```env
-DEPOT_DISTANCE_PERCENTAGE=0.45
-MAX_BIN_RADIUS_M=3000
-DEFAULT_BIN_RADIUS_M=2000
-```
+Lower radii keep dispatches ultra-local, while higher radii encourage trucks to 
+pick up additional bins during long return legs.
 
 ## Features
 
 ### Core Capabilities
 - ✅ **Real-time Simulation**: Simulate waste collection operations
 - ✅ **AI-Powered Routing**: Optimal truck dispatch and routing
-- ✅ **Smart Clustering**: Geographic bin grouping for efficiency
+- ✅ **Distance Dispatch Planner**: Prioritizes bins purely by urgency and distance
 - ✅ **Dynamic Thresholds**: Bins trigger collection based on fill level
 - ✅ **Traffic-Aware Dispatch**: Considers time-of-day traffic patterns
 - ✅ **Proactive Collection**: Collects nearby bins to prevent duplicates
 
 ### Anti-Duplication System
-- Tracks active cluster assignments
+- Tracks active dispatch recommendations and queue entries
 - Notifies backend when bins are collected
-- Prevents multiple trucks dispatching to same cluster
-- Clears assignments when collection completes
+- Prevents multiple trucks being sent to the same bin concurrently
+- Clears queue entries when collection completes
 
 ### Optimization Features
 - **VROOM Integration**: Vehicle routing optimization
@@ -136,9 +133,9 @@ DEFAULT_BIN_RADIUS_M=2000
 
 ### Backend (Flask)
 - **Agent Service**: AI decision-making and coordination
-- **Clustering Service**: Proximity-based bin grouping
-- **Proactive Dispatch**: Prevents duplicate dispatches
-- **Decision Service**: Routing optimization with VROOM
+- **Dispatch Planner Service**: Builds distance-only pickup plans and queues
+- **Distance Cache Service**: Caches bin↔depot distances for quick scoring
+- **Decision Service**: Routing optimization with VROOM or fallback heuristics
 - **Simulation Service**: Time-based state updates
 
 ### Frontend (JavaScript)
@@ -199,17 +196,17 @@ logging.basicConfig(level=logging.DEBUG)
 2. **Frontend**: Update `simulation-playground/script.js`
 3. **Configuration**: Add to `.env` and document in README
 
-## Troubleshooting
+### Troubleshooting
 
-### Agent keeps resetting / Clusters recalculating
-- Check for unwanted `invalidate_cluster_cache()` calls
-- Verify agent singleton is working (`agent_manager.py`)
-- Clusters should only calculate once at simulation start
+### Agent keeps resetting / queue rebuilt too often
+- Ensure only one `WasteCollectionAgent` instance exists (see `agent_manager.py`).
+- Verify callers reuse the agent instead of instantiating per request.
+- Queue rebuilds should align with routing cycles; frequent resets indicate duplicate agents.
 
 ### Duplicate truck dispatches
 - Ensure `/bins_collected` endpoint is called after collection
-- Check proactive dispatch tracking in backend logs
-- Verify cluster assignments are cleared properly
+- Check dispatch planner logs for `collection_queue` anomalies
+- Verify trucks report status updates so the queue can release bins
 
 ### OSRM/VROOM unavailable
 - Backend has fallback routing if services are down
@@ -229,4 +226,4 @@ logging.basicConfig(level=logging.DEBUG)
 
 ---
 
-**Need Help?** Check the logs for detailed debugging information. The backend logs clustering decisions, dispatch logic, and route optimization steps.
+**Need Help?** Check the logs for detailed debugging information. The backend logs dispatch recommendations, queue rebuilding, and route optimization steps.

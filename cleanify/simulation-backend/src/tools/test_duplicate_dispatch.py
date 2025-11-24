@@ -29,20 +29,17 @@ def main(system_path: str):
     agent = WasteCollectionAgent()
     agent.bins_data = bins
     agent.depot_data = depots
+    agent.distance_cache.warm_cache(bins, depots)
 
-    # First: process DT for BIN_2 to create an active assignment in its cluster
+    # First: process DT for BIN_2 to create a dispatch plan
     bin2 = next(b for b in bins if b['id'] == 'BIN_2')
-    result1 = agent.handle_bin_reached_dt_with_cluster_optimization(bin2, bins, trucks, 0.0)
+    result1 = agent.handle_bin_reached_dt(bin2, bins, trucks, 0.0)
     print("First DT (BIN_2) decision:", result1)
 
-    # Second: process DT for BIN_3 (same cluster)
+    # Second: process DT for BIN_3 (same neighborhood)
     bin3 = next(b for b in bins if b['id'] == 'BIN_3')
-    result2 = agent.handle_bin_reached_dt_with_cluster_optimization(bin3, bins, trucks, 60.0)
+    result2 = agent.handle_bin_reached_dt(bin3, bins, trucks, 60.0)
     print("Second DT (BIN_3) decision:", result2)
-
-    # Show active assignments for verification
-    print("Active cluster assignments:")
-    print(agent.proactive_dispatch.get_active_assignments())
 
 
 if __name__ == '__main__':

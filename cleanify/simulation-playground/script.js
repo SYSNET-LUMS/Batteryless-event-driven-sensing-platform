@@ -537,14 +537,14 @@ function handleRouteCompletion(truck, routeType) {
         hideItemRoute(truck, 'return');
         console.log(`${truck.id} completed return route`);
 
-        // Notify proactive dispatch that route is completed
+        // Notify backend that route is completed
         updateTruckAssignmentStatus(truck.id, 'route_completed');
 
-        // If there is a pending route (remaining cluster bins), resume immediately
+        // If there is a pending route (remaining bins), resume immediately
         if (truck.pendingRoute && truck.pendingRoute.length > 0) {
             const pending = truck.pendingRoute;
             truck.pendingRoute = null;
-            // Dispatch to remaining bins in the same cluster sequence
+            // Dispatch to the remaining bins that were deferred until after unloading
             assignTruckToMultipleBins(truck, pending);
             return; // exit early; assignTruckToMultipleBins sets status/travel
         }
@@ -953,30 +953,27 @@ async function performCollection(truck) {
         console.error('Failed to notify backend of bin collection:', error);
     }
 
-    // If we already have a planned sequence of cluster bins, continue with it first
-    if (Array.isArray(truck.clusterBins) && truck.clusterBins.length > 0) {
-        // Remove the bin we just collected from the plan
-        truck.clusterBins = truck.clusterBins.filter(b => b.id !== bin.id);
+    // Continue with queued bins from the current assignment if possible
+    if (Array.isArray(truck.routeQueue) && truck.routeQueue.length > 0) {
+        truck.routeQueue = truck.routeQueue.filter(b => b.id !== bin.id);
 
-        while (truck.clusterBins.length > 0) {
-            const nextPlanned = truck.clusterBins[0];
+        while (truck.routeQueue.length > 0) {
+            const nextPlanned = truck.routeQueue[0];
             const nextAmount = (nextPlanned.fillLevel / 100) * nextPlanned.capacity;
             if (truck.currentLoad + nextAmount <= truck.capacity) {
                 truck.targetBin = nextPlanned;
                 truck.status = 'traveling';
                 await assignTruckToRoute(truck, nextPlanned);
-                // Assignment logged inside assignTruckToRoute
-                return; // continue journey within cluster
-            } else {
-                // Can't fit next planned bin; store remaining plan for after dump
-                truck.pendingRoute = truck.clusterBins.map(b => b.id);
-                truck.clusterBins = null;
-                break; // proceed to return to depot below
+                return;
             }
+            // Can't fit next planned bin; store remaining IDs for after depot unload
+            truck.pendingRoute = truck.routeQueue.map(b => b.id);
+            truck.routeQueue = [];
+            break;
         }
     }
 
-    // Check for other bins in cluster to collect
+    // Ask backend for additional nearby bins to collect on this run
     try {
         const response = await fetch(`${API_BASE}/check_urgent_bins`, {
             method: 'POST',
@@ -998,7 +995,7 @@ async function performCollection(truck) {
             const remainingBins = remainingIds
                 .map(id => items.bins.find(localBin => localBin.id === id))
                 .filter(Boolean);
-            // Cluster data logged at higher level when needed
+            console.log(`🔍 Backend suggested sequence: ${allIds.join(', ')}`);
 
             // Determine which of these can fit before needing a dump
             const feasibleBins = [];
@@ -1016,29 +1013,26 @@ async function performCollection(truck) {
             const overflowBins = remainingBins.slice(feasibleBins.length);
 
             if (overflowBins.length > 0) {
-                // Store the overflow to resume after dumping at depot
                 truck.pendingRoute = overflowBins.map(b => b.id);
             }
 
             if (feasibleBins.length > 0) {
-                // Save plan locally so we can continue without extra backend calls
-                truck.clusterBins = feasibleBins;
+                truck.routeQueue = feasibleBins;
                 const next = feasibleBins[0];
                 truck.targetBin = next;
                 truck.status = 'traveling';
                 await assignTruckToRoute(truck, next);
-                // Assignment logged inside assignTruckToRoute
                 return;
             }
         }
     } catch (error) {
-        console.error('Failed to check cluster bins:', error);
+        console.error('Failed to fetch follow-up bins:', error);
     }
 
     // Return to depot if no more bins to collect or truck is full
     truck.status = 'returning_to_depot';
     truck.targetBin = null;
-    truck.clusterBins = null;
+    truck.routeQueue = [];
     hideItemRoute(truck, 'forward');
 
     const depot = findNearestDepot(truck);
@@ -1054,9 +1048,9 @@ async function assignTruckToMultipleBins(truck, binIds) {
 
     truck.status = 'traveling';
     truck.targetBin = targetBins[0];
-    truck.clusterBins = targetBins;  // Store all cluster bins
+    truck.routeQueue = targetBins;
     truck.currentRouteIndex = 0;
-    console.log(`🚛 Setting clusterBins for ${truck.id}:`, truck.clusterBins?.map(b => `${b.id}(${b.fillLevel}%)`));
+    console.log(`🚛 ${truck.id} assigned to bins:`, targetBins.map(b => `${b.id}(${b.fillLevel}%)`));
 
     // Get route to first bin
     await assignTruckToRoute(truck, targetBins[0]);
@@ -1181,28 +1175,9 @@ async function callBackendSimulationStep(timeDelta) {
                 }
             }
 
-            // Process clusters and assign colors
-            const clusterColors = ['#e74c3c', '#3498db', '#2ecc71', '#f39c12', '#9b59b6'];
-            const processedClusters = new Map();
-            let colorIndex = 0;
-
-            if (data.clusters) {
-                // Group bins by their cluster
-                Object.keys(data.clusters).forEach(binId => {
-                    const clusterMembers = data.clusters[binId].sort().join(',');
-                    if (!processedClusters.has(clusterMembers)) {
-                        processedClusters.set(clusterMembers, {
-                            color: clusterColors[colorIndex % clusterColors.length],
-                            bins: data.clusters[binId]
-                        });
-                        colorIndex++;
-                    }
-                });
-            }
-
-            // Update all bin markers smoothly
+            // Update all bin markers smoothly based on latest fill state
             items.bins.forEach(bin => {
-                updateBinMarkerStyle(bin, processedClusters);
+                updateBinMarkerStyle(bin);
             });
 
             if (data.traffic_info) {
@@ -1579,19 +1554,11 @@ function animateValue(element, start, end, duration, formatter) {
     requestAnimationFrame(update);
 }
 
-function updateBinMarkerStyle(bin, processedClusters) {
+function updateBinMarkerStyle(bin) {
     const config = ITEM_CONFIGS.bin;
     const fillColor = config.getStatusColor(bin);
-    let borderColor = '#fff';
-    let borderWidth = '2px';
-
-    // Find if bin is in a cluster
-    processedClusters.forEach((clusterInfo) => {
-        if (clusterInfo.bins.includes(bin.id)) {
-            borderColor = clusterInfo.color;
-            borderWidth = '4px';
-        }
-    });
+    const borderColor = '#fff';
+    const borderWidth = '2px';
 
     // Get existing marker element or create if needed
     const markerElement = bin.marker._icon;
