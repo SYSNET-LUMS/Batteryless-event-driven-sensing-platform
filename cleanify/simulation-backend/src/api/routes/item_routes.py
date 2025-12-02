@@ -1,21 +1,8 @@
 from flask import Blueprint, jsonify, request, current_app
 from typing import Any, cast
 from config.constants import ITEM_CONFIGS
-from services import WasteCollectionAgent
-from services.agent_manager import get_agent
 
 bp = Blueprint('items', __name__, url_prefix='/api')
-
-
-def _refresh_distance_cache(app) -> None:
-    distance_cache = getattr(app, 'distance_cache', None)
-    if not distance_cache:
-        return
-    try:
-        repo = app.system_repository
-        distance_cache.warm_cache(repo.get_bins(), repo.get_depots())
-    except Exception as exc:
-        print(f"⚠️ Distance cache refresh failed: {exc}")
 
 @bp.route('/<item_type>', methods=['POST'])
 def add_item(item_type):
@@ -45,20 +32,10 @@ def add_item(item_type):
         
         if item_type == 'bin':
             item = repo.add_bin(data)
-            # Update agent bins data for distance planner cache rebuild
-            agent = get_agent()
-            agent.bins_data = repo.get_bins()
-            _refresh_distance_cache(app)
         elif item_type == 'truck':
             item = repo.add_truck(data)
         elif item_type == 'depot':
             item = repo.add_depot(data)
-            # Use singleton agent manager for consistent agent instance
-            agent = get_agent()
-            agent.bins_data = repo.get_bins()
-            agent.depot_data = repo.get_depots()
-            print(f"✅ Using singleton agent for depot - agent_id={id(agent)}")
-            _refresh_distance_cache(app)
         
         return jsonify({"status": "success", item_type: item})
         
@@ -86,20 +63,10 @@ def update_item(item_type):
         
         if item_type == 'bin':
             item = repo.update_bin(item_id, data)
-            if item:
-                agent = get_agent()
-                agent.bins_data = repo.get_bins()
-                # Distance planner automatically incorporates updated bin data
-                _refresh_distance_cache(app)
         elif item_type == 'truck':
             item = repo.update_truck(item_id, data)
         elif item_type == 'depot':
             item = repo.update_depot(item_id, data)
-            if item:
-                agent = get_agent()
-                agent.depot_data = repo.get_depots()
-                # Update cached depot data for distance planner
-                _refresh_distance_cache(app)
         
         if item:
             return jsonify({"status": "success", item_type: item})
@@ -130,20 +97,10 @@ def delete_item(item_type):
         
         if item_type == 'bin':
             deleted_item = repo.delete_bin(item_id)
-            if deleted_item:
-                agent = get_agent()
-                agent.bins_data = repo.get_bins()
-                # Removing bins triggers distance planner cache refresh only
-                _refresh_distance_cache(app)
         elif item_type == 'truck':
             deleted_item = repo.delete_truck(item_id)
         elif item_type == 'depot':
             deleted_item = repo.delete_depot(item_id)
-            if deleted_item:
-                agent = get_agent()
-                agent.depot_data = repo.get_depots()
-                # Update depot cache for distance planner after delete
-                _refresh_distance_cache(app)
         
         if deleted_item:
             return jsonify({

@@ -1,8 +1,6 @@
-
 from flask import Blueprint, request, jsonify, current_app
 from typing import Any, cast
 from config.constants import ITEM_CONFIGS
-from services.agent_manager import get_agent
 
 bp = Blueprint('batch_sync', __name__, url_prefix='/api')
 
@@ -57,10 +55,7 @@ def batch_sync():
             depot_data['id'] = f"DEPOT_{i}"
             repo._depots.append(depot_data)
         repo._id_counters['depot'] = len(depots)
-    # Ensure agent reflects latest state for distance planner cache
-        agent = get_agent()
-        agent.bins_data = repo.get_bins()
-        agent.depot_data = repo.get_depots()
+        
         return jsonify({'status': 'success'})
     except Exception as e:
         return jsonify({'status': 'error', 'message': str(e)}), 500

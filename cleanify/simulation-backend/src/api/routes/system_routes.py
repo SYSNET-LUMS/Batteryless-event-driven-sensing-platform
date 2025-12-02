@@ -1,5 +1,4 @@
 from flask import Blueprint, jsonify, request, current_app
-from services.agent_manager import get_agent
 
 bp = Blueprint('system', __name__, url_prefix='/api')
 
@@ -7,10 +6,9 @@ bp = Blueprint('system', __name__, url_prefix='/api')
 def health_check():
     """Health check endpoint"""
     return jsonify({
-        "status": "success",
-        "message": "Simplified backend running",
-        "agent_ready": get_agent() is not None,
-        "version": "2.0-simplified"
+        "status": "active",
+        "message": "Minimalist backend running",
+        "version": "2.0-minimalist"
     })
 
 @bp.route('/initialize', methods=['POST'])

@@ -1,6 +1,5 @@
 from typing import Dict, List, Optional
 from services.external.osrm_service import OSRMService
-from services.traffic_service import TrafficManager
 from config.settings import Config
 
 class SimulationService:
@@ -63,10 +62,8 @@ class SimulationService:
     
     def __init__(self, osrm_service: OSRMService = None):
         self.osrm_service = osrm_service or OSRMService()
-        self.traffic_manager = TrafficManager()
         self.config = Config()
         self.simulation_start_hour = self.config.SIMULATION_START_HOUR
-
         self.travel_time_cache = {}
     
     def calculate_dynamic_thresholds(self, bins_data: List[Dict], 
@@ -170,19 +167,22 @@ class SimulationService:
         return updated_bins, bins_that_hit_threshold
     
     def get_traffic_info(self, simulation_time_seconds: float) -> Dict:
-        """Get current traffic information"""
+        """Get current traffic information - simplified for minimalist approach"""
         try:
             start_hour = self.simulation_start_hour
             current_time_min = (start_hour * 60) + (simulation_time_seconds // 60)
             current_hour = (current_time_min // 60) % 24
             
-            current_density = self.traffic_manager.get_density_at_time(current_time_min)
+            # Simple traffic logic: heavy during configured hours
+            heavy_hours = self.config.TRAFFIC_HEAVY_HOURS
+            is_heavy = current_hour in heavy_hours
+            current_density = self.config.TRAFFIC_MULTIPLIER if is_heavy else 1.0
             
             return {
                 'current_density': current_density,
                 'current_hour': current_hour,
                 'time_of_day': f"{current_hour:02d}:{(current_time_min % 60):02d}",
-                'traffic_level': self._get_traffic_level_description(current_density)
+                'traffic_level': 'Heavy' if is_heavy else 'Light'
             }
         except Exception as e:
             print(f"⚠️ Error getting traffic info: {e}")
@@ -208,9 +208,10 @@ class SimulationService:
             # Get travel time to depot
             base_travel_hours = self._get_travel_time_to_depot(bin_data, depot_data)
             
-            # Apply traffic multiplier
-            current_time_min = simulation_time_seconds // 60
-            traffic_density = self.traffic_manager.get_density_at_time(current_time_min)
+            # Apply traffic multiplier based on current hour
+            current_hour = int((simulation_time_seconds / 3600 + self.simulation_start_hour) % 24)
+            is_heavy = current_hour in self.config.TRAFFIC_HEAVY_HOURS
+            traffic_density = self.config.TRAFFIC_MULTIPLIER if is_heavy else 1.0
             travel_with_traffic = base_travel_hours * traffic_density
             
             # Add collection time and safety buffer
@@ -330,15 +331,7 @@ class SimulationService:
         except Exception:
             return float('inf')
     
-    def _get_traffic_level_description(self, density: float) -> str:
-        """Convert traffic density to human-readable description"""
-        if density > 5:
-            return 'Heavy'
-        elif density > 2:
-            return 'Moderate'
-        else:
-            return 'Light'
-
-    def should_dispatch_now(self,simulation_time_seconds: float) -> bool:
+    def should_dispatch_now(self, simulation_time_seconds: float) -> bool:
+        """Check if current time is good for dispatch (light traffic)"""
         traffic_info = self.get_traffic_info(simulation_time_seconds)
         return traffic_info['traffic_level'] == 'Light'
