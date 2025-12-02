@@ -59,12 +59,26 @@ def dispatch_trucks():
                 'message': 'No bins need collection'
             })
         
-        # Step 2: Traffic filtering
+        # Step 2: Smart Batching - Prevent aggressive 1-bin dispatches
+        should_dispatch, batch_reason = _should_dispatch_batch(urgent_bins, trucks)
+        
+        if not should_dispatch:
+            return jsonify({
+                'status': 'success',
+                'routes': [],
+                'waiting': [b['id'] for b in urgent_bins],
+                'message': f'Accumulating load: {batch_reason}',
+                'batching': True
+            })
+        
+        print(f"📦 Smart Batch: {batch_reason}")
+        
+        # Step 3: Traffic filtering
         dispatch_now, wait_bins = traffic_service.filter_bins_for_dispatch(
             urgent_bins, simulation_time
         )
         
-        # Step 3: VROOM optimization
+        # Step 4: VROOM optimization
         routes = []
         if dispatch_now:
             vroom_result = vroom_service.optimize_routes(dispatch_now, trucks, depot)
@@ -75,7 +89,7 @@ def dispatch_trucks():
                 # Fallback: simple assignment
                 routes = _simple_fallback(dispatch_now, trucks)
         
-        # Step 4: CRITICAL - Update system state immediately to prevent duplicate dispatch
+        # Step 5: CRITICAL - Update system state immediately to prevent duplicate dispatch
         if routes:
             _update_dispatch_state(repo, routes)
             print(f"✅ Dispatched {len(routes)} trucks, updated system state")
@@ -125,6 +139,49 @@ def _update_dispatch_state(repo, routes: list):
                 bin_data['assigned_truck'] = truck_id
                 repo.update_bin(bin_data['id'], bin_data)
                 print(f"   🗑️  {bin_data['id']}: marked as dispatched")
+
+
+def _should_dispatch_batch(urgent_bins: list, trucks: list) -> tuple[bool, str]:
+    """
+    Smart Batching Logic: Prevent aggressive 1-bin dispatches
+    
+    Decision Rule:
+    - DISPATCH if critical bins exist (>90% fill)
+    - DISPATCH if total waste volume > 50% of avg truck capacity
+    - WAIT otherwise (accumulate more bins)
+    
+    Args:
+        urgent_bins: Bins above threshold (80%)
+        trucks: Available trucks
+        
+    Returns:
+        (should_dispatch: bool, reason: str)
+    """
+    if not urgent_bins or not trucks:
+        return False, "No bins or trucks available"
+    
+    # Check for critical bins (>90% fill)
+    CRITICAL_THRESHOLD = 90
+    critical_bins = [b for b in urgent_bins if b.get('fillLevel', 0) >= CRITICAL_THRESHOLD]
+    
+    if critical_bins:
+        return True, f"{len(critical_bins)} critical bins (>90% full)"
+    
+    # Calculate total waste volume in urgent bins
+    total_waste_volume = sum(b.get('fillLevel', 0) for b in urgent_bins)
+    
+    # Calculate average truck capacity
+    capacities = [t.get('capacity', 100) for t in trucks]
+    avg_truck_capacity = sum(capacities) / len(capacities) if capacities else 100
+    
+    # Dispatch if total waste > 50% of average truck capacity
+    BATCH_THRESHOLD = 0.5
+    waste_ratio = total_waste_volume / avg_truck_capacity
+    
+    if waste_ratio >= BATCH_THRESHOLD:
+        return True, f"Waste volume {total_waste_volume:.1f}L >= {BATCH_THRESHOLD*100}% of truck capacity ({avg_truck_capacity:.1f}L)"
+    
+    return False, f"Waiting for more bins ({total_waste_volume:.1f}L < {BATCH_THRESHOLD*100}% of {avg_truck_capacity:.1f}L)"
 
 
 @bp.route('/bins_collected', methods=['POST'])
