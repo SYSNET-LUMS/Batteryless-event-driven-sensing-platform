@@ -1,13 +1,11 @@
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from typing import List, Optional
 
 @dataclass
 class Config:
-    # Urgency score weights (tunable)
-    URGENCY_WEIGHT_FILL: float = float(os.getenv('URGENCY_WEIGHT_FILL', 0.5))
-    URGENCY_WEIGHT_RATE: float = float(os.getenv('URGENCY_WEIGHT_RATE', 0.3))
-    URGENCY_WEIGHT_TIME: float = float(os.getenv('URGENCY_WEIGHT_TIME', 0.2))
-    """Application configuration with VROOM support"""
+    """Minimalist configuration for Cleanify v2.0"""
+    
     # Server settings
     HOST: str = os.getenv('HOST', '0.0.0.0')
     PORT: int = int(os.getenv('PORT', 5001))
@@ -20,23 +18,22 @@ class Config:
     # File storage
     SAVES_DIR: str = os.getenv('SAVES_DIR', 'saved_systems')
     
-    # Agent settings
-    OPENAI_API_KEY: str = os.getenv('OPENAI_API_KEY', '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')
-    
     # Simulation settings
     SIMULATION_START_HOUR: int = 7
     DEFAULT_BIN_CAPACITY: int = 500
     DEFAULT_TRUCK_CAPACITY: int = 1000
     DEFAULT_FILL_RATE: float = 3.5
     
+    # Traffic Configuration
+    TRAFFIC_HEAVY_HOURS: Optional[List[int]] = None
+    TRAFFIC_MULTIPLIER: float = float(os.getenv('TRAFFIC_MULTIPLIER', '1.5'))
+    TRAFFIC_BUFFER_HOURS: float = float(os.getenv('TRAFFIC_BUFFER_HOURS', '1.0'))
+    
     # VROOM optimization settings
     VROOM_TIMEOUT: int = int(os.getenv('VROOM_TIMEOUT', '10'))
-    VROOM_FALLBACK_ENABLED: bool = os.getenv('VROOM_FALLBACK_ENABLED', 'True').lower() == 'true'
     
-    # Distance-based dispatch settings
-    USE_DISTANCE_DISPATCH: bool = os.getenv('USE_DISTANCE_DISPATCH', 'True').lower() == 'true'
-    DISPATCH_NEARBY_RADIUS_M: int = int(os.getenv('DISPATCH_NEARBY_RADIUS_M', '1500'))
-    DISPATCH_COOLDOWN_MIN: int = int(os.getenv('DISPATCH_COOLDOWN_MIN', '30'))
-    DISPATCH_MAX_ROUTE_BINS: int = int(os.getenv('DISPATCH_MAX_ROUTE_BINS', '10'))
-    DISPATCH_CAPACITY_BUFFER_PERCENT: float = float(os.getenv('DISPATCH_CAPACITY_BUFFER_PERCENT', '5'))
-    DISPATCH_SPEED_KMH: float = float(os.getenv('DISPATCH_SPEED_KMH', '28'))
+    def __post_init__(self):
+        """Parse traffic hours from environment variable"""
+        if self.TRAFFIC_HEAVY_HOURS is None:
+            heavy_hours_str = os.getenv('TRAFFIC_HEAVY_HOURS', '8,9,17,18')
+            self.TRAFFIC_HEAVY_HOURS = [int(h.strip()) for h in heavy_hours_str.split(',') if h.strip()]

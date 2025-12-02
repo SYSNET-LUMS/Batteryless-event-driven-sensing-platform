@@ -599,41 +599,36 @@ async function startSimulation() {
 
 async function applyAIRoutingDecisions() {
     try {
-        const response = await fetch(`${API_BASE}/ai_decision/truck_routing`, {
+        // Use new minimalist dispatch endpoint
+        const response = await fetch(`${API_BASE}/dispatch`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-                simulation_time: simulationTime  // ADD THIS
+                simulation_time: simulationTime
             })
         });
 
         const data = await response.json();
 
-        if (data.status === 'success' && data.result && data.result.length > 0) {
-            console.log(`🚛 Processing ${data.result.length} routing decisions...`);
+        if (data.status === 'success' && data.routes && data.routes.length > 0) {
+            console.log(`🚛 Processing ${data.routes.length} VROOM routes...`);
 
-            for (const route of data.result) {
+            for (const route of data.routes) {
                 const truck = items.trucks.find(t => t.id === route.truck_id);
 
                 if (truck && truck.status === 'idle') {
-                    // Check if truck should wait
-                    if (route.dispatch === 'wait') {
-                        truck.status = 'waiting';
-                        truck.waitingUntil = simulationTime + (route.delay_min * 60);
-                        truck.waitReason = route.reason;
-                        truck.pendingRoute = route.route;  // Store for later
-                        console.log(`${truck.id} waiting ${route.delay_min} min: ${route.reason}`);
-                    } else {
-                        // Dispatch immediately
-                        truck.dispatchReason = route.reason;
-                        truck.dispatchTime = simulationTime;
-                        await assignTruckToMultipleBins(truck, route.route);
-                        console.log(`${truck.id} → ${route.route.join(', ')} - ${route.reason}`);
-                    }
+                    // Dispatch immediately with VROOM route
+                    truck.dispatchTime = simulationTime;
+                    await assignTruckToMultipleBins(truck, route.bin_ids);
+                    console.log(`${truck.id} → ${route.bin_ids.join(', ')} (VROOM optimized)`);
                 }
             }
+            
+            if (data.waiting?.length > 0) {
+                console.log(`⏳ ${data.waiting.length} bins waiting for light traffic`);
+            }
         } else {
-            console.log('ℹNo urgent bins for routing');
+            console.log('ℹ️ No urgent bins for routing');
         }
 
     } catch (error) {
@@ -805,62 +800,35 @@ async function simulationStep() {
 
 async function assignIdleTrucks() {
     try {
-        const response = await fetch(`${API_BASE}/ai_decision/truck_routing`, {
+        // Call new minimalist dispatch endpoint
+        const response = await fetch(`${API_BASE}/dispatch`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-                simulation_time: simulationTime  // ADD THIS
+                simulation_time: simulationTime
             })
         });
 
-        // ... rest of the function remains the same but handle 'wait' decisions
         const data = await response.json();
 
-        if (data.status === 'success' && data.result?.length > 0) {
-            const assignedBins = new Set();
-            items.trucks.forEach(t => {
-                if (t.targetBin) assignedBins.add(t.targetBin.id);
-            });
-
-            for (const route of data.result) {
-                const truck = items.trucks.find(t =>
-                    t.id === route.truck_id &&
-                    t.status === 'idle' &&
-                    !t.hasAssignment
-                );
-
-                if (truck && route.route && route.route.length > 0) {
-                    const targetBinId = route.route[0];
-
-                    if (assignedBins.has(targetBinId)) {
-                        continue;
-                    }
-
-                    // Handle wait decision
-                    if (route.dispatch === 'wait') {
-                        truck.status = 'waiting';
-                        truck.waitingUntil = simulationTime + (route.delay_min * 60);
-                        truck.waitReason = route.reason;
-                        truck.pendingRoute = route.route;
-                        truck.hasAssignment = true;
-                        console.log(`${truck.id} waiting for better traffic`);
-                    } else {
-                        const targetBin = items.bins.find(b => b.id === targetBinId);
-                        if (targetBin && targetBin.fillLevel > 1) {
-                            assignedBins.add(targetBinId);
-                            truck.hasAssignment = true;
-                            await assignTruckToRoute(truck, targetBin);
-                            // Assignment logged inside assignTruckToRoute
-
-                            // Notify proactive dispatch service about route start
-                            await updateTruckAssignmentStatus(truck.id, 'route_started', route.route);
-                        }
-                    }
+        if (data.status === 'success' && data.routes?.length > 0) {
+            console.log(`🚛 Processing ${data.routes.length} VROOM routes...`);
+            
+            for (const route of data.routes) {
+                const truck = items.trucks.find(t => t.id === route.truck_id);
+                
+                if (truck && truck.status === 'idle') {
+                    // Assign truck to multiple bins from VROOM route
+                    await assignTruckToMultipleBins(truck, route.bin_ids);
                 }
+            }
+            
+            if (data.waiting?.length > 0) {
+                console.log(`⏳ ${data.waiting.length} bins waiting for light traffic`);
             }
         }
     } catch (error) {
-        console.error('⚠️ Idle truck assignment failed:', error);
+        console.error('⚠️ Dispatch error:', error);
     }
 }
 
