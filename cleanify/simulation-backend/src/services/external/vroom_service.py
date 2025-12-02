@@ -90,7 +90,8 @@ class VROOMService:
             jobs.append({
                 "id": int_id,  # Integer ID for VROOM
                 "location": [bin_data['lng'], bin_data['lat']],
-                "service": 300  # 5 min collection time in seconds
+                "service": 300,  # 5 min collection time in seconds
+                "delivery": [int(bin_data.get('fillLevel', 0))]  # VROOM requires integer
             })
         
         vehicles = []
@@ -103,6 +104,7 @@ class VROOMService:
                 "id": int_id,  # Integer ID for VROOM
                 "start": [depot['lng'], depot['lat']],
                 "end": [depot['lng'], depot['lat']],
+                "capacity": [int(truck.get('capacity', 100))],  # VROOM requires integer
                 "profile": "car"
             })
         

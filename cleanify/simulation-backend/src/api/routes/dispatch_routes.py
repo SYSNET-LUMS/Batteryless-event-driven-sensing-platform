@@ -127,6 +127,140 @@ def _update_dispatch_state(repo, routes: list):
                 print(f"   🗑️  {bin_data['id']}: marked as dispatched")
 
 
+@bp.route('/bins_collected', methods=['POST'])
+def bins_collected():
+    """
+    Handle bin collection completion
+    
+    Request: { "truck_id": "TRUCK_1", "collected_bin_ids": ["BIN_1", "BIN_2"] }
+    Response: { "status": "success", "updated_bins": 2 }
+    """
+    try:
+        data = request.json or {}
+        truck_id = data.get('truck_id')
+        collected_bin_ids = data.get('collected_bin_ids', [])
+        
+        if not truck_id or not collected_bin_ids:
+            return jsonify({
+                'status': 'error',
+                'message': 'truck_id and collected_bin_ids required'
+            }), 400
+        
+        app = cast(Any, current_app)
+        repo = app.system_repository
+        
+        # Reset collected bins
+        bins = repo.get_bins()
+        updated_count = 0
+        truck_load_freed = 0
+        
+        for bin_data in bins:
+            if bin_data['id'] in collected_bin_ids:
+                # Store bin capacity before reset
+                bin_capacity = bin_data.get('fillLevel', 0)
+                truck_load_freed += bin_capacity
+                
+                # Reset bin state
+                bin_data['fillLevel'] = 0
+                bin_data['dispatched'] = False
+                bin_data['assigned_truck'] = None
+                repo.update_bin(bin_data['id'], bin_data)
+                updated_count += 1
+                print(f"✅ Collected {bin_data['id']}: fillLevel → 0, dispatched → False")
+        
+        # Update truck current_load
+        trucks = repo.get_trucks()
+        for truck in trucks:
+            if truck['id'] == truck_id:
+                current_load = truck.get('current_load', 0)
+                new_load = max(0, current_load - truck_load_freed)
+                truck['current_load'] = new_load
+                repo.update_truck(truck_id, truck)
+                print(f"🚛 {truck_id}: load {current_load} → {new_load}")
+                break
+        
+        return jsonify({
+            'status': 'success',
+            'updated_bins': updated_count,
+            'truck_load_freed': truck_load_freed
+        })
+        
+    except Exception as e:
+        print(f"⚠️ bins_collected error: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'status': 'error', 'message': str(e)}), 500
+
+
+@bp.route('/update_truck_status', methods=['POST'])
+def update_truck_status():
+    """
+    Update truck status and release unvisited bins if truck goes idle
+    
+    Request: { "truck_id": "TRUCK_1", "status": "idle" }
+    Response: { "status": "success", "released_bins": 2 }
+    """
+    try:
+        data = request.json or {}
+        truck_id = data.get('truck_id')
+        new_status = data.get('status')
+        
+        if not truck_id or not new_status:
+            return jsonify({
+                'status': 'error',
+                'message': 'truck_id and status required'
+            }), 400
+        
+        app = cast(Any, current_app)
+        repo = app.system_repository
+        
+        # Update truck status
+        trucks = repo.get_trucks()
+        truck_found = False
+        
+        for truck in trucks:
+            if truck['id'] == truck_id:
+                old_status = truck.get('status', 'unknown')
+                truck['status'] = new_status
+                repo.update_truck(truck_id, truck)
+                truck_found = True
+                print(f"🚛 {truck_id}: {old_status} → {new_status}")
+                break
+        
+        if not truck_found:
+            return jsonify({
+                'status': 'error',
+                'message': f'Truck {truck_id} not found'
+            }), 404
+        
+        # CRITICAL: If truck goes idle, release any bins still assigned to it
+        # This fixes the capacity bug where unvisited bins remain locked
+        released_bins = 0
+        if new_status == 'idle':
+            bins = repo.get_bins()
+            for bin_data in bins:
+                if bin_data.get('assigned_truck') == truck_id and bin_data.get('dispatched', False):
+                    # This bin was assigned but never collected
+                    bin_data['dispatched'] = False
+                    bin_data['assigned_truck'] = None
+                    repo.update_bin(bin_data['id'], bin_data)
+                    released_bins += 1
+                    print(f"   🔓 Released {bin_data['id']} (was assigned to {truck_id})")
+        
+        return jsonify({
+            'status': 'success',
+            'truck_id': truck_id,
+            'new_status': new_status,
+            'released_bins': released_bins
+        })
+        
+    except Exception as e:
+        print(f"⚠️ update_truck_status error: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'status': 'error', 'message': str(e)}), 500
+
+
 def _simple_fallback(bins: list, trucks: list) -> list:
     """Fallback if VROOM fails: one bin per truck"""
     routes = []
