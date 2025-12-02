@@ -1,6 +1,7 @@
 """
 Minimalist Dispatch Routes
 Main dispatch endpoint: Traffic Filter -> VROOM -> Routes
+Prevents duplicate dispatching by updating system state immediately
 """
 
 from flask import Blueprint, jsonify, request, current_app
@@ -42,8 +43,13 @@ def dispatch_trucks():
         depot = depots[0]
         
         # Step 1: Filter bins that need collection (above threshold)
+        # Also exclude bins already being processed
         threshold_default = 80
-        urgent_bins = [b for b in bins if b.get('fillLevel', 0) >= b.get('threshold', threshold_default)]
+        urgent_bins = [
+            b for b in bins 
+            if b.get('fillLevel', 0) >= b.get('threshold', threshold_default)
+            and not b.get('dispatched', False)  # Skip already dispatched bins
+        ]
         
         if not urgent_bins:
             return jsonify({
@@ -59,6 +65,7 @@ def dispatch_trucks():
         )
         
         # Step 3: VROOM optimization
+        routes = []
         if dispatch_now:
             vroom_result = vroom_service.optimize_routes(dispatch_now, trucks, depot)
             
@@ -67,8 +74,11 @@ def dispatch_trucks():
             else:
                 # Fallback: simple assignment
                 routes = _simple_fallback(dispatch_now, trucks)
-        else:
-            routes = []
+        
+        # Step 4: CRITICAL - Update system state immediately to prevent duplicate dispatch
+        if routes:
+            _update_dispatch_state(repo, routes)
+            print(f"✅ Dispatched {len(routes)} trucks, updated system state")
         
         return jsonify({
             'status': 'success',
@@ -83,6 +93,38 @@ def dispatch_trucks():
         import traceback
         traceback.print_exc()
         return jsonify({'status': 'error', 'message': str(e)}), 500
+
+
+def _update_dispatch_state(repo, routes: list):
+    """
+    Update truck and bin status immediately after dispatch to prevent duplicates
+    
+    Args:
+        repo: SystemRepository instance
+        routes: List of route dictionaries with truck_id and bin_ids
+    """
+    for route in routes:
+        truck_id = route['truck_id']
+        bin_ids = route['bin_ids']
+        
+        # Update truck status to 'dispatching' (frontend will change to 'traveling')
+        trucks = repo.get_trucks()
+        for truck in trucks:
+            if truck['id'] == truck_id:
+                truck['status'] = 'dispatching'
+                truck['assigned_bins'] = bin_ids
+                repo.update_truck(truck_id, truck)
+                print(f"   🚛 {truck_id}: idle → dispatching")
+                break
+        
+        # Mark bins as dispatched to prevent re-selection
+        bins = repo.get_bins()
+        for bin_data in bins:
+            if bin_data['id'] in bin_ids:
+                bin_data['dispatched'] = True
+                bin_data['assigned_truck'] = truck_id
+                repo.update_bin(bin_data['id'], bin_data)
+                print(f"   🗑️  {bin_data['id']}: marked as dispatched")
 
 
 def _simple_fallback(bins: list, trucks: list) -> list:

@@ -1,15 +1,16 @@
 """
 Minimalist VROOM Service
 Single responsibility: Convert bins/trucks to VROOM format and return optimized routes
+Handles String-to-Integer ID mapping for VROOM compatibility
 """
 
 import requests
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Tuple
 from config.settings import Config
 
 
 class VROOMService:
-    """Minimalist VROOM optimizer"""
+    """Minimalist VROOM optimizer with ID mapping"""
     
     def __init__(self, config: Optional[Config] = None):
         self.config = config or Config()
@@ -48,7 +49,8 @@ class VROOMService:
             print("⚠️ VROOM unavailable, using fallback")
             return {'status': 'error', 'message': 'VROOM unavailable'}
         
-        payload = self._build_vroom_payload(bins, trucks, depot)
+        # Build payload with ID mapping
+        payload, vehicle_map, job_map = self._build_vroom_payload(bins, trucks, depot)
         
         try:
             response = requests.post(
@@ -59,7 +61,7 @@ class VROOMService:
             response.raise_for_status()
             
             vroom_result = response.json()
-            return self._parse_vroom_response(vroom_result)
+            return self._parse_vroom_response(vroom_result, vehicle_map, job_map)
             
         except Exception as e:
             print(f"⚠️ VROOM error: {e}")
@@ -70,38 +72,86 @@ class VROOMService:
         bins: List[Dict], 
         trucks: List[Dict], 
         depot: Dict
-    ) -> Dict:
-        """Convert to VROOM JSON format"""
+    ) -> Tuple[Dict, Dict, Dict]:
+        """
+        Convert to VROOM JSON format with Integer ID mapping
+        
+        Returns:
+            (payload, vehicle_map, job_map)
+            vehicle_map: {int_id: string_truck_id}
+            job_map: {int_id: string_bin_id}
+        """
         jobs = []
-        for bin_data in bins:
+        job_map = {}  # {int_id: string_bin_id}
+        
+        for idx, bin_data in enumerate(bins):
+            int_id = idx + 1  # Start from 1
+            job_map[int_id] = bin_data['id']
             jobs.append({
-                "id": bin_data['id'],
+                "id": int_id,  # Integer ID for VROOM
                 "location": [bin_data['lng'], bin_data['lat']],
                 "service": 300  # 5 min collection time in seconds
             })
         
         vehicles = []
-        for truck in trucks:
+        vehicle_map = {}  # {int_id: string_truck_id}
+        
+        for idx, truck in enumerate(trucks):
+            int_id = idx + 1  # Start from 1
+            vehicle_map[int_id] = truck['id']
             vehicles.append({
-                "id": truck['id'],
+                "id": int_id,  # Integer ID for VROOM
                 "start": [depot['lng'], depot['lat']],
                 "end": [depot['lng'], depot['lat']],
                 "profile": "car"
             })
         
-        return {
+        payload = {
             "jobs": jobs,
             "vehicles": vehicles
         }
+        
+        print(f"🔧 VROOM payload: {len(vehicles)} vehicles, {len(jobs)} jobs")
+        print(f"   Vehicle map: {vehicle_map}")
+        print(f"   Job map: {job_map}")
+        
+        return payload, vehicle_map, job_map
     
-    def _parse_vroom_response(self, vroom_result: Dict) -> Dict:
-        """Extract routes from VROOM response"""
+    def _parse_vroom_response(
+        self, 
+        vroom_result: Dict, 
+        vehicle_map: Dict, 
+        job_map: Dict
+    ) -> Dict:
+        """
+        Extract routes from VROOM response and map IDs back to strings
+        
+        Args:
+            vroom_result: VROOM API response
+            vehicle_map: {int_id: string_truck_id}
+            job_map: {int_id: string_bin_id}
+        """
         routes = []
         
         for route_data in vroom_result.get('routes', []):
-            truck_id = route_data['vehicle']
-            bin_ids = [step['id'] for step in route_data.get('steps', []) 
-                      if step['type'] == 'job']
+            int_vehicle_id = route_data['vehicle']
+            
+            # Map vehicle ID back to string
+            truck_id = vehicle_map.get(int_vehicle_id)
+            if not truck_id:
+                print(f"⚠️ Unknown vehicle ID: {int_vehicle_id}")
+                continue
+            
+            # Map bin IDs back to strings
+            bin_ids = []
+            for step in route_data.get('steps', []):
+                if step['type'] == 'job':
+                    int_job_id = step['id']
+                    bin_id = job_map.get(int_job_id)
+                    if bin_id:
+                        bin_ids.append(bin_id)
+                    else:
+                        print(f"⚠️ Unknown job ID: {int_job_id}")
             
             if bin_ids:  # Only include routes with bins
                 routes.append({
@@ -110,6 +160,7 @@ class VROOMService:
                     'distance': route_data.get('distance', 0),
                     'duration': route_data.get('duration', 0)
                 })
+                print(f"✅ Route: {truck_id} → {bin_ids}")
         
         return {
             'status': 'success',
