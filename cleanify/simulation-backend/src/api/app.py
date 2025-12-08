@@ -48,6 +48,11 @@ def create_app(config: Config = None) -> Flask:
     app.schedule_service = ScheduleService()
     app.config_obj = config
     
+    # Global distance matrix cache for VROOM (persists across dispatch calls)
+    app.distance_matrix_cache = {}
+    app.last_bin_locations = None  # Track bin locations for cache invalidation
+    app.last_truck_locations = None
+    
     # Register blueprints
     app.register_blueprint(system_routes.bp)
     app.register_blueprint(item_routes.bp)

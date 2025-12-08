@@ -1,11 +1,11 @@
 """
-Minimalist Dispatch Routes
-Main dispatch endpoint: Traffic Filter -> VROOM -> Routes
+Unified Global Optimization Dispatch (Refactored)
+Send ALL bins to VROOM with priorities + time windows
 Prevents duplicate dispatching by updating system state immediately
 """
 
 from flask import Blueprint, jsonify, request, current_app
-from typing import Any, cast
+from typing import Any, cast, Dict
 
 bp = Blueprint('dispatch', __name__, url_prefix='/api')
 
@@ -29,67 +29,80 @@ def dispatch_trucks():
         
         # Get system state
         bins = repo.get_bins()
-        trucks = [t for t in repo.get_trucks() if t.get('status') == 'idle']
+        idle_trucks = [t for t in repo.get_trucks() if t.get('status') == 'idle']
         depots = repo.get_depots()
         
-        if not bins or not trucks or not depots:
+        if not bins or not idle_trucks or not depots:
             return jsonify({
                 'status': 'success',
                 'routes': [],
-                'waiting': [],
-                'message': 'Insufficient system components'
+                'waiting': [b['id'] for b in bins],
+                'message': 'No idle trucks available'
             })
         
         depot = depots[0]
         
-        # Step 1: Filter bins that need collection (above threshold)
-        # Also exclude bins already being processed
-        threshold_default = 80
-        urgent_bins = [
+        # UNIFIED GLOBAL OPTIMIZATION: Get all non-dispatched bins
+        undispatch_bins = [
             b for b in bins 
-            if b.get('fillLevel', 0) >= b.get('threshold', threshold_default)
-            and not b.get('dispatched', False)  # Skip already dispatched bins
+            if not b.get('dispatched', False)
         ]
         
-        if not urgent_bins:
+        if not undispatch_bins:
             return jsonify({
                 'status': 'success',
                 'routes': [],
                 'waiting': [],
-                'message': 'No bins need collection'
+                'message': 'No undispatched bins available'
             })
         
-        # Step 2: Smart Batching - Prevent aggressive 1-bin dispatches
-        should_dispatch, batch_reason = _should_dispatch_batch(urgent_bins, trucks)
+        # Step 1: Calculate urgency metrics for each bin
+        for b in undispatch_bins:
+            _calculate_bin_urgency(b, depot, simulation_time)
+        
+        # Step 2: Classify bins by urgency (for predictive dispatch)
+        critical_bins, near_threshold_bins, low_urgency_bins = _classify_bins_by_urgency(
+            undispatch_bins, simulation_time
+        )
+        
+        # Step 3: Unified dispatch decision
+        should_dispatch = _should_dispatch_unified(
+            critical_bins, near_threshold_bins, idle_trucks
+        )
         
         if not should_dispatch:
+            waiting_ids = [b['id'] for b in undispatch_bins]
             return jsonify({
                 'status': 'success',
                 'routes': [],
-                'waiting': [b['id'] for b in urgent_bins],
-                'message': f'Accumulating load: {batch_reason}',
-                'batching': True
+                'waiting': waiting_ids,
+                'message': f'Accumulating. Critical: {len(critical_bins)}, Near: {len(near_threshold_bins)}, Low: {len(low_urgency_bins)}',
+                'batching': True,
+                'bin_classification': {
+                    'critical': len(critical_bins),
+                    'near_threshold': len(near_threshold_bins),
+                    'low_urgency': len(low_urgency_bins)
+                }
             })
         
-        print(f"📦 Smart Batch: {batch_reason}")
+        print(f"📦 Dispatching: Critical={len(critical_bins)}, Near={len(near_threshold_bins)}, Low={len(low_urgency_bins)}")
         
-        # Step 3: Traffic filtering
-        dispatch_now, wait_bins = traffic_service.filter_bins_for_dispatch(
-            urgent_bins, simulation_time
-        )
+        # Step 4: Check distance cache validity before VROOM
+        _invalidate_distance_cache_if_needed(app, undispatch_bins, idle_trucks)
         
-        # Step 4: VROOM optimization
+        # Step 5: GLOBAL VROOM OPTIMIZATION with all bins
         routes = []
-        if dispatch_now:
-            vroom_result = vroom_service.optimize_routes(dispatch_now, trucks, depot)
+        if undispatch_bins:
+            vroom_result = vroom_service.optimize_routes_with_constraints(
+                undispatch_bins, idle_trucks, depot, critical_bins, simulation_time
+            )
             
             if vroom_result['status'] == 'success':
                 routes = vroom_result['routes']
             else:
-                # Fallback: simple assignment
-                routes = _simple_fallback(dispatch_now, trucks)
+                routes = _simple_fallback(critical_bins + near_threshold_bins, idle_trucks)
         
-        # Step 5: CRITICAL - Update system state immediately to prevent duplicate dispatch
+        # Step 6: Update system state
         if routes:
             _update_dispatch_state(repo, routes)
             print(f"✅ Dispatched {len(routes)} trucks, updated system state")
@@ -97,9 +110,12 @@ def dispatch_trucks():
         return jsonify({
             'status': 'success',
             'routes': routes,
-            'waiting': [b['id'] for b in wait_bins],
-            'traffic_filtered': len(wait_bins),
-            'dispatch_count': len(routes)
+            'dispatch_count': len(routes),
+            'bin_classification': {
+                'critical': len(critical_bins),
+                'near_threshold': len(near_threshold_bins),
+                'low_urgency': len(low_urgency_bins)
+            }
         })
         
     except Exception as e:
@@ -139,6 +155,84 @@ def _update_dispatch_state(repo, routes: list):
                 bin_data['assigned_truck'] = truck_id
                 repo.update_bin(bin_data['id'], bin_data)
                 print(f"   🗑️  {bin_data['id']}: marked as dispatched")
+
+
+def _calculate_bin_urgency(bin_data: Dict, depot: Dict, simulation_time: float) -> None:
+    """
+    Calculate urgency metrics for a bin. Used by VROOM for priority weighting.
+    """
+    fill = bin_data.get('fillLevel', 0)
+    capacity = bin_data.get('capacity', 500)
+    rate = bin_data.get('fillRate', 1.0)
+    
+    # Time to overflow (hours)
+    if rate > 0:
+        remaining_capacity = (100 - fill) * capacity / 100
+        time_to_overflow = remaining_capacity / rate
+    else:
+        time_to_overflow = float('inf')
+    
+    # Urgency score (0-100): higher = more urgent
+    fill_score = (fill / 100) * 40  # 0-40 points
+    rate_score = min(30, (rate / 10) * 30)  # 0-30 points
+    
+    if time_to_overflow <= 1:
+        overflow_score = 30
+    elif time_to_overflow <= 4:
+        overflow_score = 20
+    else:
+        overflow_score = 10
+    
+    urgency_score = min(100, fill_score + rate_score + overflow_score)
+    
+    bin_data['urgency_score'] = urgency_score
+    bin_data['time_to_overflow'] = time_to_overflow
+
+
+def _classify_bins_by_urgency(bins: list, simulation_time: float) -> tuple:
+    """
+    Classify bins into urgency categories.
+    Returns: (critical_bins, near_threshold_bins, low_urgency_bins)
+    """
+    critical = []
+    near_threshold = []
+    low_urgency = []
+    
+    for b in bins:
+        fill = b.get('fillLevel', 0)
+        time_overflow = b.get('time_to_overflow', float('inf'))
+        
+        if fill >= 90 or time_overflow < 1.0:
+            critical.append(b)
+        elif fill >= 70 or time_overflow < 4.0:
+            near_threshold.append(b)
+        else:
+            low_urgency.append(b)
+    
+    return critical, near_threshold, low_urgency
+
+
+def _should_dispatch_unified(critical_bins: list, near_threshold_bins: list, 
+                            trucks: list) -> bool:
+    """
+    Unified dispatch decision: Should we dispatch now?
+    Rules: Always dispatch if critical bins. Dispatch if near-threshold accumulates.
+    """
+    if not trucks:
+        return False
+    
+    # Always dispatch critical bins
+    if critical_bins:
+        return True
+    
+    # Dispatch if we have 40% of avg truck capacity in near-threshold bins
+    if not near_threshold_bins:
+        return False
+    
+    total_waste = sum(b.get('fillLevel', 0) for b in near_threshold_bins)
+    avg_capacity = sum(t.get('capacity', 1500) for t in trucks) / len(trucks)
+    
+    return total_waste / avg_capacity >= 0.4
 
 
 def _should_dispatch_batch(urgent_bins: list, trucks: list) -> tuple[bool, str]:
@@ -182,6 +276,24 @@ def _should_dispatch_batch(urgent_bins: list, trucks: list) -> tuple[bool, str]:
         return True, f"Waste volume {total_waste_volume:.1f}L >= {BATCH_THRESHOLD*100}% of truck capacity ({avg_truck_capacity:.1f}L)"
     
     return False, f"Waiting for more bins ({total_waste_volume:.1f}L < {BATCH_THRESHOLD*100}% of {avg_truck_capacity:.1f}L)"
+
+
+def _invalidate_distance_cache_if_needed(app, bins: list, trucks: list) -> None:
+    """
+    Invalidate cached distance matrix if bin or truck locations changed.
+    Called before VROOM optimization.
+    """
+    bin_locations = tuple(sorted((b['lat'], b['lng'], b['id']) for b in bins))
+    truck_locations = tuple(sorted((t['lat'], t['lng'], t['id']) for t in trucks))
+    
+    if app.last_bin_locations != bin_locations or app.last_truck_locations != truck_locations:
+        app.distance_matrix_cache.clear()
+        print("🔄 Distance matrix cache invalidated (locations changed)")
+        app.last_bin_locations = bin_locations
+        app.last_truck_locations = truck_locations
+    else:
+        print(f"✅ Reusing distance matrix cache ({len(app.distance_matrix_cache)} entries)")
+
 
 
 @bp.route('/bins_collected', methods=['POST'])

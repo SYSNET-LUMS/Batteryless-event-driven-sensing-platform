@@ -5,4 +5,9 @@ __pycache__/
 **/__pycache__/
 *.env
 *.log
-*/other/
+.vscode/
+.idea/
+dist/
+build/
+*.egg-info/
+other/
