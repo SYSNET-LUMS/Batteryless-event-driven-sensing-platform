@@ -185,8 +185,8 @@ function showBackendError() {
 }
 
 function initializeMap() {
-    // Initialize map centered on Islamabad
-    map = L.map('map').setView([33.6844, 73.0479], 13);
+    // Initialize map centered on DHA/LUMS, Lahore for default view
+    map = L.map('map').setView([31.4703, 74.4081], 14);
     // Add tile layer
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
         attribution: '© OpenStreetMap contributors'
