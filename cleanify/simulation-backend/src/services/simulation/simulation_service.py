@@ -75,67 +75,20 @@ class SimulationService:
     def calculate_dynamic_thresholds(self, bins_data: List[Dict], 
                                    simulation_time_seconds: float,
                                    depot_data: Optional[Dict] = None) -> List[Dict]:
-        """Calculate dynamic thresholds for all bins with smooth, urgency-weighted neighbor adjustment"""
+        """Calculate dynamic thresholds for all bins"""
         updated_bins = []
-        from utils.distance import calculate_distance_km
-
-        # Precompute urgency for all bins using the dedicated function
-        bin_urgencies = {}
-        for b in bins_data:
-            try:
-                urgency_data = self.calculate_urgency_score(b)
-                urgency = urgency_data.get('score', 0.5)
-                bin_urgencies[b['id']] = urgency
-            except Exception:
-                bin_urgencies[b['id']] = 0.5
 
         for bin_data in bins_data:
             try:
-                # 1) Base DT using travel time, traffic and safety buffer
+                # Calculate simple dynamic threshold using travel time and traffic
                 if depot_data:
-                    base_dt = self._calculate_single_dynamic_threshold(
+                    dt = self._calculate_single_dynamic_threshold(
                         bin_data, simulation_time_seconds, depot_data
                     )
+                    bin_data['dynamic_threshold'] = dt
                 else:
-                    base_dt = bin_data.get('threshold', 80)
-
-                # 2) Neighbor-aware adjustment
-                radius_km = 0.5
-                soon_hours = 1.0
-                threshold_slack = 5.0
-
-                # Find neighbors that are close to threshold or will reach soon
-                neighbor_scores = []
-                for other in bins_data:
-                    if other is bin_data:
-                        continue
-                    d_km = calculate_distance_km(
-                        bin_data['lat'], bin_data['lng'], other['lat'], other['lng']
-                    )
-                    if d_km > radius_km:
-                        continue
-                    other_dt = other.get('dynamic_threshold', other.get('threshold', 80))
-                    t_to_dt = self._time_to_threshold_hours(other, other_dt)
-                    fill = other.get('fillLevel', 0)
-                    # Score: proximity * urgency * (near threshold or soon)
-                    proximity = max(0.0, 1.0 - (d_km / radius_km))
-                    near_thresh = 1.0 if (fill >= (other_dt - threshold_slack) or t_to_dt <= soon_hours) else 0.0
-                    score = proximity * bin_urgencies.get(other['id'], 0.5) * near_thresh
-                    if score > 0:
-                        neighbor_scores.append(score)
-
-                # Aggregate neighbor influence
-                if neighbor_scores:
-                    # Use a smooth function: reduction = max(3, min(12, 10 * sigmoid(sum)))
-                    import math
-                    agg = sum(neighbor_scores)
-                    # Sigmoid squashes large values smoothly
-                    reduction = 3.0 + 9.0 * (1 / (1 + math.exp(-agg + 1.5)))
-                    adjusted_dt = max(50.0, min(95.0, base_dt - reduction))
-                else:
-                    adjusted_dt = base_dt
-
-                bin_data['dynamic_threshold'] = adjusted_dt
+                    bin_data['dynamic_threshold'] = bin_data.get('threshold', 80)
+                
                 updated_bins.append(bin_data)
             except Exception as e:
                 print(f"Error calculating threshold for {bin_data.get('id')}: {e}")

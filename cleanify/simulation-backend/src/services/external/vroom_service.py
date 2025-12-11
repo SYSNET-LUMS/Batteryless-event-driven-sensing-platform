@@ -16,39 +16,6 @@ class VROOMService:
         self.vroom_url = self.config.VROOM_URL
         self.timeout = self.config.VROOM_TIMEOUT
     
-    def optimize_routes(
-        self, 
-        bins: List[Dict], 
-        trucks: List[Dict], 
-        depot: Dict
-    ) -> Dict:
-        """
-        Legacy method: Send filtered bins and trucks to VROOM.
-        (Kept for backward compatibility)
-        """
-        if not self.is_available():
-            print("⚠️ VROOM unavailable")
-            return {'status': 'error', 'message': 'VROOM unavailable'}
-        
-        payload, vehicle_map, job_map = self._build_vroom_payload(bins, trucks, depot)
-        
-        try:
-            print(f"[VROOM] request payload:\n{json.dumps(payload, indent=2)}")
-            response = requests.post(
-                self.vroom_url,
-                json=payload,
-                timeout=self.timeout
-            )
-            response.raise_for_status()
-            print(f"[VROOM] response status={response.status_code}\n{response.text}")
-
-            vroom_result = response.json()
-            return self._parse_vroom_response(vroom_result, vehicle_map, job_map)
-            
-        except Exception as e:
-            print(f"⚠️ VROOM error: {e}")
-            return {'status': 'error', 'message': str(e)}
-    
     def optimize_routes_with_constraints(
         self,
         bins: List[Dict],
@@ -171,67 +138,6 @@ class VROOMService:
         print(f"🔧 VROOM payload (global): {len(vehicles)} vehicles, {len(jobs)} jobs, "
               f"{len(critical_ids)} CRITICAL")
         print(f"   Vehicle map: {vehicle_map}")
-        
-        return payload, vehicle_map, job_map
-    
-    def _build_vroom_payload(
-        self, 
-        bins: List[Dict], 
-        trucks: List[Dict], 
-        depot: Dict
-    ) -> Tuple[Dict, Dict, Dict]:
-        """
-        Convert to VROOM JSON format with Integer ID mapping
-        
-        Returns:
-            (payload, vehicle_map, job_map)
-            vehicle_map: {int_id: string_truck_id}
-            job_map: {int_id: string_bin_id}
-        """
-        jobs = []
-        job_map = {}  # {int_id: string_bin_id}
-        
-        for idx, bin_data in enumerate(bins):
-            int_id = idx + 1  # Start from 1
-            job_map[int_id] = bin_data['id']
-            capacity_liters = float(bin_data.get('capacity', 500))
-            fill_level = float(bin_data.get('fillLevel', 0))
-            waste_volume = max(0, int(round(capacity_liters * (fill_level / 100.0))))
-            
-            # Calculate priority based on fill level (higher fill = higher priority)
-            # VROOM priority: higher value = higher priority (visit earlier)
-            priority = int(fill_level)  # 90% fill = priority 90
-            
-            jobs.append({
-                "id": int_id,  # Integer ID for VROOM
-                "location": [bin_data['lng'], bin_data['lat']],
-                "service": 300,  # 5 min collection time in seconds
-                "delivery": [waste_volume],  # Use liters to respect truck capacity
-                "priority": priority  # Higher fill = visit earlier
-            })
-        
-        vehicles = []
-        vehicle_map = {}  # {int_id: string_truck_id}
-        
-        for idx, truck in enumerate(trucks):
-            int_id = idx + 1  # Start from 1
-            vehicle_map[int_id] = truck['id']
-            vehicles.append({
-                "id": int_id,  # Integer ID for VROOM
-                "start": [depot['lng'], depot['lat']],
-                "end": [depot['lng'], depot['lat']],
-                "capacity": [int(truck.get('capacity', 100))],  # VROOM requires integer
-                "profile": "car"
-            })
-        
-        payload = {
-            "jobs": jobs,
-            "vehicles": vehicles
-        }
-        
-        print(f"🔧 VROOM payload: {len(vehicles)} vehicles, {len(jobs)} jobs")
-        print(f"   Vehicle map: {vehicle_map}")
-        print(f"   Job map: {job_map}")
         
         return payload, vehicle_map, job_map
     
