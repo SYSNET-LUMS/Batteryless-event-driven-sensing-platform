@@ -16,7 +16,7 @@ from models.bin import Bin
 from models.truck import Truck
 from models.depot import Depot
 from services.clustering_service import ClusteringService
-from services.traffic_service import TrafficManager
+from services.traffic_service import TrafficService
 from services.routing.enhanced_truck_availability_service import EnhancedTruckAvailabilityService
 from services.routing.dynamic_route_optimizer import DynamicRouteOptimizer
 
@@ -25,7 +25,7 @@ class StreamlinedSystemTester:
     def __init__(self):
         self.system_file = '/media/muneeb-ur-rehman/CA66F1CB66F1B871/Study/Sproj/Cleanify/cleanify/simulation-backend/saved_systems/comprehensive_test_system.json'
         self.clustering_service = ClusteringService()
-        self.traffic_service = TrafficManager()
+        self.traffic_service = TrafficService()
         self.availability_service = EnhancedTruckAvailabilityService()
         self.route_optimizer = DynamicRouteOptimizer()
         

@@ -13,7 +13,7 @@ import os
 # Add the src directory to the Python path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'cleanify', 'simulation-backend', 'src'))
 
-from services.traffic_service import TrafficManager
+from services.traffic_service import TrafficService
 from services.routing.enhanced_truck_availability_service import EnhancedTruckAvailabilityService
 from services.routing.dynamic_route_optimizer import DynamicRouteOptimizer
 
@@ -336,7 +336,7 @@ def test_enhanced_traffic_routing():
     trucks_data, bins_data, schedules, depot_data = create_test_data()
     current_time_seconds = 8 * 3600 + 30 * 60  # 8:30 AM
     
-    traffic_manager = TrafficManager()
+    traffic_manager = TrafficService()
     
     try:
         result = traffic_manager.get_enhanced_routing_recommendations(

@@ -7,7 +7,7 @@ ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'simulation
 if ROOT not in sys.path:
     sys.path.insert(0, ROOT)
 
-from services.traffic_service import TrafficManager
+from services.traffic_service import TrafficService
 
 # Helper to build bin/truck data
 BIN_TEMPLATE = {
@@ -32,7 +32,7 @@ TRUCK_TEMPLATE = {
 
 @pytest.fixture
 def tm():
-    return TrafficManager()
+    return TrafficService()
 
 @pytest.mark.parametrize("current_hour,expect_strategy", [
     # Scenario: heavy traffic starts soon, enough time to go before
