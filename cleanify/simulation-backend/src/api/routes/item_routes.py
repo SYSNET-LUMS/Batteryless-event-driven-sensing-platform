@@ -36,7 +36,8 @@ def add_item(item_type):
             item = repo.add_truck(data)
         elif item_type == 'depot':
             item = repo.add_depot(data)
-        
+
+        _rebuild_distance_matrix_if_needed(app, item_type)
         return jsonify({"status": "success", item_type: item})
         
     except Exception as e:
@@ -69,6 +70,7 @@ def update_item(item_type):
             item = repo.update_depot(item_id, data)
         
         if item:
+            _rebuild_distance_matrix_if_needed(app, item_type)
             return jsonify({"status": "success", item_type: item})
         else:
             return jsonify({"status": "error", "message": f"{item_type.title()} not found"}), 404
@@ -103,6 +105,7 @@ def delete_item(item_type):
             deleted_item = repo.delete_depot(item_id)
         
         if deleted_item:
+            _rebuild_distance_matrix_if_needed(app, item_type)
             return jsonify({
                 "status": "success",
                 "message": f"{item_type.title()} {item_id} deleted",
@@ -114,3 +117,15 @@ def delete_item(item_type):
     except Exception as e:
         print(f"⚠ Error deleting {item_type}: {e}")
         return jsonify({"status": "error", "message": str(e)}), 500
+
+
+def _rebuild_distance_matrix_if_needed(app, item_type: str) -> None:
+    if item_type not in {'bin', 'depot'}:
+        return
+    service = getattr(app, 'distance_matrix_service', None)
+    if not service:
+        return
+    service.build_matrices(
+        app.system_repository.get_bins(),
+        app.system_repository.get_depots(),
+    )

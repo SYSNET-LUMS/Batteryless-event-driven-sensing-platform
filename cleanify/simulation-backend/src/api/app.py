@@ -11,6 +11,7 @@ from services.traffic_service import TrafficService
 from services.routing_service import RoutingService
 from services.file_service import FileService
 from services.schedule_service import ScheduleService
+from services.distance_matrix_service import DistanceMatrixService
 from services.external.osrm_service import OSRMService
 from services.external.vroom_service import VROOMService
 from services.simulation.simulation_service import SimulationService
@@ -42,16 +43,20 @@ def create_app(config: Config = None) -> Flask:
     app.osrm_service = OSRMService(config)
     app.traffic_service = TrafficService(config)
     app.vroom_service = VROOMService(config)
+    app.distance_matrix_service = DistanceMatrixService(app.osrm_service)
+    app.distance_matrix_service.build_matrices(
+        app.system_repository.get_bins(),
+        app.system_repository.get_depots(),
+        force=True,
+    )
     app.routing_service = RoutingService(config, osrm_service=app.osrm_service)
-    app.simulation_service = SimulationService(app.osrm_service)
+    app.simulation_service = SimulationService(
+        app.osrm_service,
+        distance_matrix_service=app.distance_matrix_service,
+    )
     app.file_service = FileService(config.SAVES_DIR)
     app.schedule_service = ScheduleService()
     app.config_obj = config
-    
-    # Global distance matrix cache for VROOM (persists across dispatch calls)
-    app.distance_matrix_cache = {}
-    app.last_bin_locations = None  # Track bin locations for cache invalidation
-    app.last_truck_locations = None
     
     # Register blueprints
     app.register_blueprint(system_routes.bp)

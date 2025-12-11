@@ -119,13 +119,18 @@ class VROOMService:
             # Priority: use urgency score if available, else fill level
             priority = int(bin_data.get('urgency_score', bin_data.get('fillLevel', 0)))
             priority = min(100, max(0, priority))
+
+            # Convert fill percentage to actual waste volume in liters
+            capacity_liters = float(bin_data.get('capacity', 500))
+            fill_percent = float(bin_data.get('fillLevel', 0))
+            waste_volume = max(0, int(round(capacity_liters * (fill_percent / 100.0))))
             
             # Build job object
             job = {
                 "id": int_id,
                 "location": [bin_data['lng'], bin_data['lat']],
                 "service": 300,  # 5 min collection time
-                "delivery": [int(bin_data.get('fillLevel', 0))],
+                "delivery": [waste_volume],
                 "priority": priority
             }
             
@@ -189,17 +194,19 @@ class VROOMService:
         for idx, bin_data in enumerate(bins):
             int_id = idx + 1  # Start from 1
             job_map[int_id] = bin_data['id']
+            capacity_liters = float(bin_data.get('capacity', 500))
+            fill_level = float(bin_data.get('fillLevel', 0))
+            waste_volume = max(0, int(round(capacity_liters * (fill_level / 100.0))))
             
             # Calculate priority based on fill level (higher fill = higher priority)
             # VROOM priority: higher value = higher priority (visit earlier)
-            fill_level = bin_data.get('fillLevel', 0)
             priority = int(fill_level)  # 90% fill = priority 90
             
             jobs.append({
                 "id": int_id,  # Integer ID for VROOM
                 "location": [bin_data['lng'], bin_data['lat']],
                 "service": 300,  # 5 min collection time in seconds
-                "delivery": [int(fill_level)],  # VROOM requires integer
+                "delivery": [waste_volume],  # Use liters to respect truck capacity
                 "priority": priority  # Higher fill = visit earlier
             })
         

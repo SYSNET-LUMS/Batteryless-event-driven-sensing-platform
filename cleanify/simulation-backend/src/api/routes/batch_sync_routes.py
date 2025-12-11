@@ -55,7 +55,15 @@ def batch_sync():
             depot_data['id'] = f"DEPOT_{i}"
             repo._depots.append(depot_data)
         repo._id_counters['depot'] = len(depots)
-        
+        _rebuild_distance_matrix(app)
         return jsonify({'status': 'success'})
     except Exception as e:
         return jsonify({'status': 'error', 'message': str(e)}), 500
+
+
+def _rebuild_distance_matrix(app) -> None:
+    service = getattr(app, 'distance_matrix_service', None)
+    if not service:
+        return
+    repo = app.system_repository
+    service.build_matrices(repo.get_bins(), repo.get_depots(), force=True)

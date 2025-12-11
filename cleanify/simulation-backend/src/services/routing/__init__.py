@@ -1,3 +1,5 @@
-from .optimization_service import OptimizationService
+"""Routing package placeholder.
 
-__all__ = ['OptimizationService']
+Legacy optimization services were removed in the minimalist refactor, so this
+module intentionally remains empty to avoid import errors.
+"""

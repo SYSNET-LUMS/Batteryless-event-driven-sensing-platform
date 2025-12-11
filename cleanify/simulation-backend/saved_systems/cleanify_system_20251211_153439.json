@@ -1,0 +1,98 @@
+{
+  "bins": [
+    {
+      "lat": 31.496017791846135,
+      "lng": 74.38687978043215,
+      "fillLevel": 20,
+      "capacity": 200,
+      "fillRate": 6.5,
+      "threshold": 80,
+      "id": "BIN_1"
+    },
+    {
+      "lat": 31.502750360104724,
+      "lng": 74.38378519881283,
+      "fillLevel": 20,
+      "capacity": 500,
+      "fillRate": 7.5,
+      "threshold": 80,
+      "id": "BIN_2"
+    },
+    {
+      "lat": 31.49396841301527,
+      "lng": 74.42431707306457,
+      "fillLevel": 20,
+      "capacity": 100,
+      "fillRate": 7.5,
+      "threshold": 80,
+      "id": "BIN_3"
+    },
+    {
+      "lat": 31.495065996051693,
+      "lng": 74.4178732099003,
+      "fillLevel": 20,
+      "capacity": 200,
+      "fillRate": 6.5,
+      "threshold": 80,
+      "id": "BIN_4"
+    },
+    {
+      "lat": 31.487820743214673,
+      "lng": 74.42062206054514,
+      "fillLevel": 20,
+      "capacity": 500,
+      "fillRate": 8.5,
+      "threshold": 80,
+      "id": "BIN_5"
+    },
+    {
+      "lat": 31.500554826505912,
+      "lng": 74.40731505796877,
+      "fillLevel": 20,
+      "capacity": 500,
+      "fillRate": 3.5,
+      "threshold": 80,
+      "id": "BIN_6"
+    }
+  ],
+  "trucks": [
+    {
+      "lat": 31.47486889730981,
+      "lng": 74.40551936411194,
+      "capacity": 2000,
+      "speed": 50,
+      "currentLoad": 0,
+      "status": "idle",
+      "id": "TRUCK_1"
+    },
+    {
+      "lat": 31.474865201092072,
+      "lng": 74.40559390697209,
+      "capacity": 1500,
+      "speed": 50,
+      "currentLoad": 0,
+      "status": "idle",
+      "id": "TRUCK_2"
+    }
+  ],
+  "depots": [
+    {
+      "lat": 31.47486889730981,
+      "lng": 74.40551936411194,
+      "name": "Default Depot",
+      "id": "DEPOT_1"
+    }
+  ],
+  "schedules": [],
+  "id_counters": {
+    "bin": 6,
+    "truck": 2,
+    "depot": 1,
+    "schedule": 0
+  },
+  "metadata": {
+    "saved_at": "2025-12-11T15:34:39.327013",
+    "filename": "cleanify_system_20251211_153439.json",
+    "version": "2.0-simplified"
+  }
+}

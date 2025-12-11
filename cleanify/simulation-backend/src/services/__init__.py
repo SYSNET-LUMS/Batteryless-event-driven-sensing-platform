@@ -7,6 +7,7 @@ from .traffic_service import TrafficService
 from .routing_service import RoutingService
 from .file_service import FileService
 from .schedule_service import ScheduleService
+from .distance_matrix_service import DistanceMatrixService
 
 # External services
 from .external.osrm_service import OSRMService
@@ -21,6 +22,7 @@ __all__ = [
     'RoutingService',
     'FileService',
     'ScheduleService',
+    'DistanceMatrixService',
     
     # External services
     'OSRMService',

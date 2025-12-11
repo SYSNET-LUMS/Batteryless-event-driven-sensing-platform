@@ -1,5 +1,6 @@
 from typing import Dict, List, Optional
 from services.external.osrm_service import OSRMService
+from services.distance_matrix_service import DistanceMatrixService
 from config.settings import Config
 
 class SimulationService:
@@ -60,8 +61,13 @@ class SimulationService:
         return {'score': urgency}
     """Manages simulation state and coordinates updates"""
     
-    def __init__(self, osrm_service: OSRMService = None):
+    def __init__(
+        self,
+        osrm_service: OSRMService = None,
+        distance_matrix_service: Optional[DistanceMatrixService] = None,
+    ):
         self.osrm_service = osrm_service or OSRMService()
+        self.distance_matrix_service = distance_matrix_service
         self.config = Config()
         self.simulation_start_hour = self.config.SIMULATION_START_HOUR
         self.travel_time_cache = {}
@@ -285,6 +291,25 @@ class SimulationService:
         # Return cached value if exists
         if cache_key in self.travel_time_cache:
             return self.travel_time_cache[cache_key]
+        
+        travel_time_hours: Optional[float] = None
+        bin_id = bin_data.get('id')
+        depot_id = depot_data.get('id')
+        if (
+            self.distance_matrix_service
+            and bin_id
+            and depot_id
+        ):
+            cached_distance = self.distance_matrix_service.get_bin_to_depot_distance(bin_id, depot_id)
+            if cached_distance is None:
+                cached_distance = self.distance_matrix_service.get_depot_to_bin_distance(depot_id, bin_id)
+            if cached_distance is not None:
+                distance_km = cached_distance / 1000.0
+                travel_time_hours = distance_km / truck_speed
+        
+        if travel_time_hours is not None:
+            self.travel_time_cache[cache_key] = travel_time_hours
+            return travel_time_hours
         
         try:
             # Try OSRM first for base route time

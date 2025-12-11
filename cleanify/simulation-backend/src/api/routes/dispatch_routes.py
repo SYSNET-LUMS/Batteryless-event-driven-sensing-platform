@@ -87,8 +87,8 @@ def dispatch_trucks():
         
         print(f"📦 Dispatching: Critical={len(critical_bins)}, Near={len(near_threshold_bins)}, Low={len(low_urgency_bins)}")
         
-        # Step 4: Check distance cache validity before VROOM
-        _invalidate_distance_cache_if_needed(app, undispatch_bins, idle_trucks)
+        # Step 4: Ensure distance matrix is available before VROOM
+        _ensure_distance_matrix(app, undispatch_bins)
         
         # Step 5: GLOBAL VROOM OPTIMIZATION with all bins
         routes = []
@@ -278,21 +278,18 @@ def _should_dispatch_batch(urgent_bins: list, trucks: list) -> tuple[bool, str]:
     return False, f"Waiting for more bins ({total_waste_volume:.1f}L < {BATCH_THRESHOLD*100}% of {avg_truck_capacity:.1f}L)"
 
 
-def _invalidate_distance_cache_if_needed(app, bins: list, trucks: list) -> None:
-    """
-    Invalidate cached distance matrix if bin or truck locations changed.
-    Called before VROOM optimization.
-    """
-    bin_locations = tuple(sorted((b['lat'], b['lng'], b['id']) for b in bins))
-    truck_locations = tuple(sorted((t['lat'], t['lng'], t['id']) for t in trucks))
-    
-    if app.last_bin_locations != bin_locations or app.last_truck_locations != truck_locations:
-        app.distance_matrix_cache.clear()
-        print("🔄 Distance matrix cache invalidated (locations changed)")
-        app.last_bin_locations = bin_locations
-        app.last_truck_locations = truck_locations
+def _ensure_distance_matrix(app, bins: list) -> None:
+    """Ensure the shared distance matrix is up-to-date before computing routes."""
+    service = getattr(app, 'distance_matrix_service', None)
+    if not service:
+        return
+    depots = app.system_repository.get_depots()
+    summary = service.build_matrices(bins, depots)
+    status = summary.get('status', 'unknown')
+    if status == 'rebuilt':
+        print(f"🧮 Distance matrix rebuilt in {summary.get('build_seconds', 0):.2f}s")
     else:
-        print(f"✅ Reusing distance matrix cache ({len(app.distance_matrix_cache)} entries)")
+        print("✅ Distance matrix cache reused")
 
 
 

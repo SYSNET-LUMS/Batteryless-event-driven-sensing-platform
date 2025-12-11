@@ -1,0 +1,16 @@
+# Flask Configuration
+FLASK_ENV=development
+FLASK_DEBUG=True
+HOST=0.0.0.0
+PORT=5001
+
+# External Services
+OSRM_URL=http://localhost:5000
+VROOM_URL=http://localhost:3000
+
+# File Storage
+SAVES_DIR=saved_systems
+
+# Optimization Settings
+VROOM_TIMEOUT=10
+VROOM_FALLBACK_ENABLED=True

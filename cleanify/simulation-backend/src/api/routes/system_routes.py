@@ -16,6 +16,9 @@ def initialize_system():
     """Initialize the waste collection system"""
     try:
         current_app.system_repository.clear_all()
+        distance_service = getattr(current_app, 'distance_matrix_service', None)
+        if distance_service:
+            distance_service.clear()
         # No need to reset singleton agent here; use AgentManager.reset_agent() if needed
         warning_msg = "System initialized. WARNING: All schedules and system state have been cleared. Do not call this after loading a system file if you want to keep schedules."
         return jsonify({"status": "success", "message": warning_msg})
@@ -54,3 +57,24 @@ def osrm_debug_reset():
         return jsonify({"status": "success", "message": "OSRM stats reset"})
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
+
+
+@bp.route('/distance_matrix/status', methods=['GET'])
+def distance_matrix_status():
+    """Expose the current distance matrix cache status for debugging."""
+    service = getattr(current_app, 'distance_matrix_service', None)
+    if not service:
+        return jsonify({"status": "error", "message": "DistanceMatrixService unavailable"}), 503
+
+    summary = service.last_build_summary or {"status": "empty"}
+    cache_sizes = {
+        "depots": len(service.depot_to_bin),
+        "bins": len(service.bin_to_depot),
+        "depot_to_bin_entries": sum(len(v) for v in service.depot_to_bin.values()),
+        "bin_to_bin_entries": sum(len(v) for v in service.bin_to_bin.values()),
+    }
+    return jsonify({
+        "status": "success",
+        "summary": summary,
+        "cache_sizes": cache_sizes,
+    })

@@ -33,6 +33,7 @@ def load_system(filename):
         # Restore system state in repository
         repo = app.system_repository
         repo.set_state(system_state)
+        _rebuild_distance_matrix(app)
         
         print(f"System loaded from: {filename}")
         return jsonify({
@@ -44,6 +45,14 @@ def load_system(filename):
     except Exception as e:
         print(f"⚠ Load failed: {e}")
         return jsonify({"status": "error", "message": str(e)}), 500
+
+
+def _rebuild_distance_matrix(app) -> None:
+    service = getattr(app, 'distance_matrix_service', None)
+    if not service:
+        return
+    repo = app.system_repository
+    service.build_matrices(repo.get_bins(), repo.get_depots(), force=True)
 
 @bp.route('/saved_files', methods=['GET'])
 def get_saved_files():
