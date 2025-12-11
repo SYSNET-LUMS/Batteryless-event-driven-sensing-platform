@@ -118,11 +118,10 @@ async function initializeBackend() {
     try {
         const response = await fetch(`${API_BASE}/health`);
         const data = await response.json();
-        console.log('Connection established:', data);
+        // Backend connected
 
         // Initialize system
         await fetch(`${API_BASE}/initialize`, { method: 'POST' });
-        console.log('Backend initialized');
 
         // Fetch simulation start hour from backend
         await fetchSimulationStartHour();
@@ -141,14 +140,11 @@ async function initializeBackend() {
 
 async function fetchSimulationStartHour() {
     try {
-        console.log('Fetching simulation start hour from backend...');
         const response = await fetch(`${API_BASE}/config/simulation_start_hour`);
         const data = await response.json();
 
         if (data.status === 'success') {
             simulationStartHour = data.simulation_start_hour;
-            console.log(`✅ Simulation start hour fetched from backend: ${simulationStartHour}`);
-            console.log(`Time will now display starting from ${simulationStartHour}:00:00`);
         } else {
             console.warn('❌ Failed to fetch simulation start hour, using default:', simulationStartHour);
         }
@@ -447,7 +443,7 @@ function showItemRoute(item, routeType = 'forward', options = {}) {
     const routeKey = `${item.id}_${routeType}`;
     routePolylines.set(routeKey, polyline);
 
-    console.log(`🗺️ Showing ${routeType} route for ${item.id}`);
+    // Route visualization
 }
 
 function hideItemRoute(item, routeType = 'both') {
@@ -459,7 +455,7 @@ function hideItemRoute(item, routeType = 'both') {
         if (polyline && map.hasLayer(polyline)) {
             map.removeLayer(polyline);
             routePolylines.delete(routeKey);
-            console.log(`🗺️ Hiding ${type} route for ${item.id}`);
+            // Hide route
         }
     });
 }
@@ -503,9 +499,8 @@ function moveItemStraightLine(truck, target) {
             truck.status = 'idle';
             truck.currentLoad = 0;
             truck.targetDepot = null;
-            console.log(`🏭 ${truck.id} returned to depot and unloaded`);
-            // Notify backend that truck completed its route and is now available
-            updateTruckAssignmentStatus(truck.id, 'completed_route');
+            // Notify backend that truck returned and is idle
+            updateTruckAssignmentStatus(truck.id, 'idle');
         } else {
             truck.status = 'collecting';
         }
@@ -535,10 +530,10 @@ function handleRouteCompletion(truck, routeType) {
         truck.hasAssignment = false;
 
         hideItemRoute(truck, 'return');
-        console.log(`${truck.id} completed return route`);
+        // Return route completed
 
         // Notify backend that route is completed
-        updateTruckAssignmentStatus(truck.id, 'route_completed');
+        updateTruckAssignmentStatus(truck.id, 'idle');
 
         // If there is a pending route (remaining bins), resume immediately
         if (truck.pendingRoute && truck.pendingRoute.length > 0) {
@@ -554,7 +549,7 @@ function handleRouteCompletion(truck, routeType) {
         truck.marker.setLatLng([truck.lat, truck.lng]);
         truck.status = 'collecting';
         truck.routeIndex = 0;
-        console.log(`${truck.id} completed forward route to ${truck.targetBin.id}`);
+        // Reached target bin
     }
     updateBackendPosition(truck, 'truck');
 }
@@ -588,7 +583,7 @@ async function startSimulation() {
             // Start simulation loop
             simulationInterval = setInterval(simulationStep, Math.max(20, 1000 / simulationSpeed));
 
-            console.log('✅ Simulation started');
+            // Simulation started
         }
 
     } catch (error) {
@@ -611,7 +606,7 @@ async function applyAIRoutingDecisions() {
         const data = await response.json();
 
         if (data.status === 'success' && data.routes && data.routes.length > 0) {
-            console.log(`🚛 Processing ${data.routes.length} VROOM routes...`);
+            // Processing VROOM routes
 
             for (const route of data.routes) {
                 const truck = items.trucks.find(t => t.id === route.truck_id);
@@ -628,7 +623,7 @@ async function applyAIRoutingDecisions() {
                 console.log(`⏳ ${data.waiting.length} bins waiting for light traffic`);
             }
         } else {
-            console.log('ℹ️ No urgent bins for routing');
+            // No urgent bins
         }
 
     } catch (error) {
@@ -680,7 +675,7 @@ async function checkScheduledDispatches() {
         const data = await response.json();
 
         if (data.status === 'success' && data.active_schedules.length > 0) {
-            console.log(`📅 Found ${data.active_schedules.length} scheduled dispatches ready for execution`);
+            // Scheduled dispatches ready
 
             for (const schedule of data.active_schedules) {
                 await executeScheduledDispatch(schedule);
@@ -728,7 +723,7 @@ async function executeScheduledDispatch(schedule) {
         // Assign truck to the scheduled route
         await assignTruckToMultipleBins(truck, schedule.target_bin_ids);
 
-        console.log(`📅 ✅ Executed scheduled dispatch: ${schedule.truck_id} → ${schedule.target_bin_ids.join(', ')} (${schedule.area_name})`);
+        // Scheduled dispatch executed
 
         // Update schedule status to completed after successful dispatch
         setTimeout(async () => {
@@ -766,7 +761,7 @@ async function handleScheduledDispatchFromBackend(dispatch) {
         // Assign truck to the scheduled route
         await assignTruckToMultipleBins(truck, dispatch.route);
 
-        console.log(`📅 ✅ Backend scheduled dispatch executed: ${dispatch.truck_id} → ${dispatch.route.join(', ')}`);
+        // Scheduled dispatch executed
 
         // Reload schedules to update UI
         await loadSchedules();
@@ -812,7 +807,7 @@ async function assignIdleTrucks() {
         const data = await response.json();
 
         if (data.status === 'success' && data.routes?.length > 0) {
-            console.log(`🚛 Processing ${data.routes.length} VROOM routes...`);
+            // Processing VROOM routes
             
             for (const route of data.routes) {
                 const truck = items.trucks.find(t => t.id === route.truck_id);
@@ -875,7 +870,7 @@ function updateTruck(truck) {
                 // Truck is truly idle with no load - ensure backend knows it's available
                 // This handles edge cases where status wasn't properly synchronized
                 if (!truck._idleNotified) {
-                    updateTruckAssignmentStatus(truck.id, 'available');
+                    updateTruckAssignmentStatus(truck.id, 'idle');
                     truck._idleNotified = true;
                 }
             }
@@ -904,7 +899,7 @@ async function performCollection(truck) {
     await updateBackendPosition(bin, 'bin');
     collectionsToday++;
 
-    console.log(`✅ ${truck.id} collected ${bin.id} (${wasteAmount.toFixed(0)}L)`);
+    // Collection completed
     
     // Notify backend that bin was collected (prevents duplicate dispatch)
     try {
@@ -1018,7 +1013,7 @@ async function assignTruckToMultipleBins(truck, binIds) {
     truck.targetBin = targetBins[0];
     truck.routeQueue = targetBins;
     truck.currentRouteIndex = 0;
-    console.log(`🚛 ${truck.id} assigned to bins:`, targetBins.map(b => `${b.id}(${b.fillLevel}%)`));
+    // Truck assigned to bins
 
     // Get route to first bin
     await assignTruckToRoute(truck, targetBins[0]);
@@ -1053,7 +1048,7 @@ async function assignTruckToRoute(truck, bin) {
             hideItemRoute(truck, 'forward');
             showItemRoute(truck, 'forward');
 
-            console.log(`🚛 ${truck.id} assigned to ${bin.id}`);
+            // Truck assigned
         } else {
             truck.targetBin = bin;
             truck.status = 'traveling';
@@ -1154,7 +1149,7 @@ async function callBackendSimulationStep(timeDelta) {
 
             // Handle scheduled dispatches
             if (data.schedule_dispatches && data.schedule_dispatches.length > 0) {
-                console.log(`📅 Processing ${data.schedule_dispatches.length} scheduled dispatches from backend`);
+                // Processing scheduled dispatches
                 for (const dispatch of data.schedule_dispatches) {
                     await handleScheduledDispatchFromBackend(dispatch);
                 }
@@ -1195,27 +1190,23 @@ async function handleBinReachedDT(binId) {
     }
 }
 
-// POST helper: update truck assignment status for proactive dispatch tracking
-async function updateTruckAssignmentStatus(truckId, status, assignedBins = []) {
+// Notify backend about truck status transitions (releases bins when idle)
+async function updateTruckAssignmentStatus(truckId, status) {
     try {
-        const response = await fetch(`${API_BASE}/update_truck_assignment`, {
+        const response = await fetch(`${API_BASE}/update_truck_status`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
                 truck_id: truckId,
-                status: status,
-                assigned_bins: assignedBins,
-                simulation_time: simulationTime
+                status: status
             })
         });
         const data = await response.json();
-        if (data.status === 'success') {
-            console.log(`Updated truck ${truckId} status to ${status}`);
-        } else {
-            console.warn(`❌ Failed to update truck ${truckId} status:`, data.message || data);
+        if (data.status !== 'success') {
+            // Non-critical; ignore
         }
     } catch (err) {
-        console.error(`⚠️ Error updating truck ${truckId} assignment status:`, err);
+        // Non-critical; ignore
     }
 }
 
@@ -1366,27 +1357,12 @@ function updateCollectionQueueFromBackend() {
 }
 
 // Legacy function: Fetch collection queue from dedicated endpoint (fallback)
+// Legacy function: Collection queue is now populated from simulation step response
+// Keeping this as fallback in case needed, but no longer called
 async function updateCollectionQueue() {
-    const container = document.getElementById('collectionQueue');
-    try {
-        const response = await fetch(`${API_BASE}/collection_queue`);
-        const data = await response.json();
-        if (data.status === 'success' && Array.isArray(data.collection_queue)) {
-            const newQueue = data.collection_queue;
-            if (newQueue.length === 0) {
-                smoothUpdateQueueContainer(container, [], 'No collections needed');
-                return;
-            }
-            smoothUpdateQueueContainer(container, newQueue);
-            previousQueue = [...newQueue]; // Store for next comparison
-        } else {
-            // Only show error, not 'No collections needed' for non-success cases
-            smoothUpdateQueueContainer(container, [], 'Error loading queue');
-        }
-    } catch (err) {
-        smoothUpdateQueueContainer(container, [], 'Error loading queue');
-        console.error('Error fetching collection queue:', err);
-    }
+    // Queue is populated from callBackendSimulationStep response
+    // No separate endpoint needed
+    return;
 }
 
 function smoothUpdateQueueContainer(container, newQueue, emptyMessage = null) {
@@ -1808,7 +1784,6 @@ function loadSystemFromState(systemState) {
             updateStats();
             updateSimulationTime();
             centerMapOnItems();
-            console.log(`✅ Loaded ${items.bins.length} bins, ${items.trucks.length} trucks, ${items.depots.length} depots`);
             return;
         }
         let itemType = types[idx];
@@ -1832,8 +1807,6 @@ async function syncLoadedDataWithBackend() {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ bins, trucks, depots })
         });
-
-        console.log('✅ Backend sync complete');
     } catch (error) {
         console.error('⚠ Backend sync failed:', error);
     }
@@ -2035,7 +2008,6 @@ async function loadSchedules() {
 
         if (data.status === 'success') {
             schedules = data.schedules;
-            console.log('🟢 Schedules loaded from backend:', schedules);
             updateSchedulesDisplay();
         } else {
             console.error('Failed to load schedules:', data.message);
@@ -2151,7 +2123,7 @@ async function createSchedule() {
         const data = await response.json();
 
         if (data.status === 'success') {
-            console.log('✅ Schedule created successfully');
+            // Schedule created
             closeScheduleModal();
             loadSchedules(); // Reload schedules
 
@@ -2239,7 +2211,7 @@ async function deleteSchedule(scheduleId) {
         const data = await response.json();
 
         if (data.status === 'success') {
-            console.log('✅ Schedule deleted successfully');
+            // Schedule deleted
             loadSchedules();
             openSchedulesViewModal(); // Refresh the modal
         } else {

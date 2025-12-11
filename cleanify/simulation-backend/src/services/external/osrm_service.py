@@ -47,10 +47,8 @@ class OSRMService:
             url = f"{self.osrm_url}/route/v1/driving/{lng1},{lat1};{lng2},{lat2}"
             params = {'overview': 'false'}
 
-            print(f"[OSRM distance] request url={url} params={params}")
             response = requests.get(url, params=params, timeout=self.timeout)
             data = response.json()
-            print(f"[OSRM distance] response: {json.dumps(data, indent=2)}")
             
             if data['code'] == 'Ok':
                 dist = data['routes'][0]['distance']
@@ -80,10 +78,8 @@ class OSRMService:
                 'steps': 'true'
             }
 
-            print(f"[OSRM route] request url={url} params={params}")
             response = requests.get(url, params=params, timeout=self.timeout)
             data = response.json()
-            print(f"[OSRM route] response: {json.dumps(data, indent=2)}")
             
             if data['code'] != 'Ok':
                 raise Exception(f"OSRM error: {data.get('message', 'Unknown error')}")

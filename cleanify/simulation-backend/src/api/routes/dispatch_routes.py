@@ -85,8 +85,6 @@ def dispatch_trucks():
                 }
             })
         
-        print(f"📦 Dispatching: Critical={len(critical_bins)}, Near={len(near_threshold_bins)}, Low={len(low_urgency_bins)}")
-        
         # Step 4: Ensure distance matrix is available before VROOM
         _ensure_distance_matrix(app, undispatch_bins)
         
@@ -144,7 +142,6 @@ def _update_dispatch_state(repo, routes: list):
                 truck['status'] = 'dispatching'
                 truck['assigned_bins'] = bin_ids
                 repo.update_truck(truck_id, truck)
-                print(f"   🚛 {truck_id}: idle → dispatching")
                 break
         
         # Mark bins as dispatched to prevent re-selection
@@ -154,7 +151,6 @@ def _update_dispatch_state(repo, routes: list):
                 bin_data['dispatched'] = True
                 bin_data['assigned_truck'] = truck_id
                 repo.update_bin(bin_data['id'], bin_data)
-                print(f"   🗑️  {bin_data['id']}: marked as dispatched")
 
 
 def _calculate_bin_urgency(bin_data: Dict, depot: Dict, simulation_time: float) -> None:

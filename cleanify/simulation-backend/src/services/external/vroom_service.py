@@ -43,14 +43,12 @@ class VROOMService:
         )
         
         try:
-            print(f"[VROOM] request payload (with constraints):\n{json.dumps(payload, indent=2)}")
             response = requests.post(
                 self.vroom_url,
                 json=payload,
                 timeout=self.timeout
             )
             response.raise_for_status()
-            print(f"[VROOM] response status={response.status_code}\n{response.text}")
 
             vroom_result = response.json()
             return self._parse_vroom_response(vroom_result, vehicle_map, job_map)
@@ -111,7 +109,6 @@ class VROOMService:
                 end_time = start_time + 60  # 60 minute window
                 
                 job["time_window"] = [start_time, end_time]
-                print(f"   🔴 CRITICAL: {bin_data['id']} with time_window [{start_time}, {end_time}]")
             
             jobs.append(job)
         
@@ -134,10 +131,6 @@ class VROOMService:
             "jobs": jobs,
             "vehicles": vehicles
         }
-        
-        print(f"🔧 VROOM payload (global): {len(vehicles)} vehicles, {len(jobs)} jobs, "
-              f"{len(critical_ids)} CRITICAL")
-        print(f"   Vehicle map: {vehicle_map}")
         
         return payload, vehicle_map, job_map
     
