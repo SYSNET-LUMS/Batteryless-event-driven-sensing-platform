@@ -1,0 +1,58 @@
+{
+  "description": "Basic single depot scenario for VROOM integration testing",
+  "depots": [
+    {
+      "id": "DEPOT_1",
+      "lat": 31.5497,
+      "lng": 74.3436,
+      "name": "Main Depot"
+    }
+  ],
+  "bins": [
+    {
+      "id": "BIN_1",
+      "lat": 31.544114,
+      "lng": 74.352811,
+      "fillLevel": 75,
+      "capacity": 500,
+      "fillRate": 2.0,
+      "threshold": 80
+    },
+    {
+      "id": "BIN_2",
+      "lat": 31.545103,
+      "lng": 74.352583,
+      "fillLevel": 60,
+      "capacity": 500,
+      "fillRate": 3.5,
+      "threshold": 80
+    },
+    {
+      "id": "BIN_3",
+      "lat": 31.547317,
+      "lng": 74.338259,
+      "fillLevel": 82,
+      "capacity": 500,
+      "fillRate": 4.0,
+      "threshold": 80
+    }
+  ],
+  "trucks": [
+    {
+      "id": "TRUCK_1",
+      "depot_id": "DEPOT_1",
+      "lat": 31.5497,
+      "lng": 74.3436,
+      "capacity": 1000,
+      "currentLoad": 0,
+      "status": "idle",
+      "speed": 50
+    }
+  ],
+  "metadata": {
+    "total_depots": 1,
+    "total_bins": 3,
+    "total_trucks": 1,
+    "base_coordinates": "31.5497, 74.3436"
+  }
+}

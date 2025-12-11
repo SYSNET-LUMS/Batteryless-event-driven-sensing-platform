@@ -1,0 +1,192 @@
+{
+  "description": "All bins below threshold - tests no-dispatch logic",
+  "depots": [
+    {
+      "id": "DEPOT_1",
+      "lat": 31.5497,
+      "lng": 74.3436,
+      "name": "Central Depot"
+    },
+    {
+      "id": "DEPOT_2",
+      "lat": 31.579700000000003,
+      "lng": 74.3836,
+      "name": "East Depot"
+    }
+  ],
+  "bins": [
+    {
+      "id": "BIN_1",
+      "lat": 31.566413,
+      "lng": 74.332096,
+      "fillLevel": 30,
+      "capacity": 500,
+      "fillRate": 1.553013745575875,
+      "threshold": 80
+    },
+    {
+      "id": "BIN_2",
+      "lat": 31.578747,
+      "lng": 74.340373,
+      "fillLevel": 27,
+      "capacity": 500,
+      "fillRate": 2.092180698966858,
+      "threshold": 80
+    },
+    {
+      "id": "BIN_3",
+      "lat": 31.543359,
+      "lng": 74.32675,
+      "fillLevel": 30,
+      "capacity": 500,
+      "fillRate": 1.8263098412744336,
+      "threshold": 80
+    },
+    {
+      "id": "BIN_4",
+      "lat": 31.524585,
+      "lng": 74.368094,
+      "fillLevel": 21,
+      "capacity": 500,
+      "fillRate": 1.785869376195713,
+      "threshold": 80
+    },
+    {
+      "id": "BIN_5",
+      "lat": 31.57821,
+      "lng": 74.366197,
+      "fillLevel": 20,
+      "capacity": 500,
+      "fillRate": 2.1424941491873373,
+      "threshold": 80
+    },
+    {
+      "id": "BIN_6",
+      "lat": 31.554686,
+      "lng": 74.334675,
+      "fillLevel": 34,
+      "capacity": 500,
+      "fillRate": 2.1602233117177816,
+      "threshold": 80
+    },
+    {
+      "id": "BIN_7",
+      "lat": 31.547885,
+      "lng": 74.360626,
+      "fillLevel": 26,
+      "capacity": 500,
+      "fillRate": 2.260342835747874,
+      "threshold": 80
+    },
+    {
+      "id": "BIN_8",
+      "lat": 31.570675,
+      "lng": 74.357063,
+      "fillLevel": 30,
+      "capacity": 500,
+      "fillRate": 1.6096315699079848,
+      "threshold": 80
+    },
+    {
+      "id": "BIN_9",
+      "lat": 31.576644,
+      "lng": 74.343976,
+      "fillLevel": 26,
+      "capacity": 500,
+      "fillRate": 1.9363810976309894,
+      "threshold": 80
+    },
+    {
+      "id": "BIN_10",
+      "lat": 31.560795,
+      "lng": 74.312327,
+      "fillLevel": 20,
+      "capacity": 500,
+      "fillRate": 1.43056845151306,
+      "threshold": 80
+    },
+    {
+      "id": "BIN_11",
+      "lat": 31.527569,
+      "lng": 74.337226,
+      "fillLevel": 27,
+      "capacity": 500,
+      "fillRate": 2.648934765255328,
+      "threshold": 80
+    },
+    {
+      "id": "BIN_12",
+      "lat": 31.541382,
+      "lng": 74.335166,
+      "fillLevel": 34,
+      "capacity": 500,
+      "fillRate": 2.5780836560915903,
+      "threshold": 80
+    },
+    {
+      "id": "BIN_13",
+      "lat": 31.56171,
+      "lng": 74.353054,
+      "fillLevel": 21,
+      "capacity": 500,
+      "fillRate": 2.6574467941044935,
+      "threshold": 80
+    },
+    {
+      "id": "BIN_14",
+      "lat": 31.526144,
+      "lng": 74.368646,
+      "fillLevel": 23,
+      "capacity": 500,
+      "fillRate": 1.1681846519070331,
+      "threshold": 80
+    },
+    {
+      "id": "BIN_15",
+      "lat": 31.568588,
+      "lng": 74.318784,
+      "fillLevel": 20,
+      "capacity": 500,
+      "fillRate": 2.5322282690505054,
+      "threshold": 80
+    }
+  ],
+  "trucks": [
+    {
+      "id": "TRUCK_1",
+      "depot_id": "DEPOT_1",
+      "lat": 31.5497,
+      "lng": 74.3436,
+      "capacity": 1000,
+      "currentLoad": 0,
+      "status": "idle",
+      "speed": 50
+    },
+    {
+      "id": "TRUCK_2",
+      "depot_id": "DEPOT_1",
+      "lat": 31.5497,
+      "lng": 74.3436,
+      "capacity": 1000,
+      "currentLoad": 0,
+      "status": "idle",
+      "speed": 50
+    },
+    {
+      "id": "TRUCK_3",
+      "depot_id": "DEPOT_2",
+      "lat": 31.579700000000003,
+      "lng": 74.3836,
+      "capacity": 1000,
+      "currentLoad": 0,
+      "status": "idle",
+      "speed": 50
+    }
+  ],
+  "metadata": {
+    "total_depots": 2,
+    "total_bins": 15,
+    "total_trucks": 3,
+    "base_coordinates": "31.5497, 74.3436"
+  }
+}

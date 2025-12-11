@@ -1,0 +1,58 @@
+{
+  "description": "Simple routing: 1 depot, 3 bins, 1 truck",
+  "depots": [
+    {
+      "id": "DEPOT_1",
+      "lat": 31.5497,
+      "lng": 74.3436,
+      "name": "Main Depot"
+    }
+  ],
+  "bins": [
+    {
+      "id": "BIN_1",
+      "lat": 31.550457,
+      "lng": 74.344709,
+      "fillLevel": 75,
+      "capacity": 500,
+      "fillRate": 2.0,
+      "threshold": 80
+    },
+    {
+      "id": "BIN_2",
+      "lat": 31.55741,
+      "lng": 74.340045,
+      "fillLevel": 65,
+      "capacity": 500,
+      "fillRate": 3.0,
+      "threshold": 80
+    },
+    {
+      "id": "BIN_3",
+      "lat": 31.54971,
+      "lng": 74.343522,
+      "fillLevel": 80,
+      "capacity": 500,
+      "fillRate": 2.5,
+      "threshold": 80
+    }
+  ],
+  "trucks": [
+    {
+      "id": "TRUCK_1",
+      "depot_id": "DEPOT_1",
+      "lat": 31.5497,
+      "lng": 74.3436,
+      "capacity": 1000,
+      "currentLoad": 0,
+      "status": "idle",
+      "speed": 50
+    }
+  ],
+  "metadata": {
+    "total_depots": 1,
+    "total_bins": 3,
+    "total_trucks": 1,
+    "base_coordinates": "31.5497, 74.3436"
+  }
+}

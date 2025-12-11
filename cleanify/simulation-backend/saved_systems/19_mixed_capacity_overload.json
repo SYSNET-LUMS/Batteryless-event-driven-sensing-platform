@@ -1,0 +1,318 @@
+{
+  "description": "Mixed bin/truck capacities - tests capacity matching and pairing",
+  "depots": [
+    {
+      "id": "DEPOT_1",
+      "lat": 31.5497,
+      "lng": 74.3436,
+      "name": "Central Depot"
+    },
+    {
+      "id": "DEPOT_2",
+      "lat": 31.579700000000003,
+      "lng": 74.3836,
+      "name": "East Depot"
+    },
+    {
+      "id": "DEPOT_3",
+      "lat": 31.5197,
+      "lng": 74.3236,
+      "name": "West Depot"
+    }
+  ],
+  "bins": [
+    {
+      "id": "BIN_1",
+      "lat": 31.542914,
+      "lng": 74.357135,
+      "fillLevel": 87,
+      "capacity": 500,
+      "fillRate": 4.800339130036527,
+      "threshold": 80
+    },
+    {
+      "id": "BIN_2",
+      "lat": 31.562927,
+      "lng": 74.372232,
+      "fillLevel": 91,
+      "capacity": 200,
+      "fillRate": 4.731298616786447,
+      "threshold": 80
+    },
+    {
+      "id": "BIN_3",
+      "lat": 31.549623,
+      "lng": 74.339301,
+      "fillLevel": 82,
+      "capacity": 50,
+      "fillRate": 5.647408520575265,
+      "threshold": 80
+    },
+    {
+      "id": "BIN_4",
+      "lat": 31.549415,
+      "lng": 74.343213,
+      "fillLevel": 92,
+      "capacity": 50,
+      "fillRate": 4.040417235857353,
+      "threshold": 80
+    },
+    {
+      "id": "BIN_5",
+      "lat": 31.568444,
+      "lng": 74.34212,
+      "fillLevel": 95,
+      "capacity": 500,
+      "fillRate": 5.914820665569571,
+      "threshold": 80
+    },
+    {
+      "id": "BIN_6",
+      "lat": 31.533856,
+      "lng": 74.347306,
+      "fillLevel": 87,
+      "capacity": 50,
+      "fillRate": 2.7490826170369274,
+      "threshold": 80
+    },
+    {
+      "id": "BIN_7",
+      "lat": 31.545231,
+      "lng": 74.344605,
+      "fillLevel": 90,
+      "capacity": 50,
+      "fillRate": 4.288560733472185,
+      "threshold": 80
+    },
+    {
+      "id": "BIN_8",
+      "lat": 31.549702,
+      "lng": 74.341651,
+      "fillLevel": 94,
+      "capacity": 500,
+      "fillRate": 3.660946431164361,
+      "threshold": 80
+    },
+    {
+      "id": "BIN_9",
+      "lat": 31.531074,
+      "lng": 74.349822,
+      "fillLevel": 82,
+      "capacity": 200,
+      "fillRate": 3.671294317026328,
+      "threshold": 80
+    },
+    {
+      "id": "BIN_10",
+      "lat": 31.521022,
+      "lng": 74.336206,
+      "fillLevel": 95,
+      "capacity": 200,
+      "fillRate": 3.499958265228712,
+      "threshold": 80
+    },
+    {
+      "id": "BIN_11",
+      "lat": 31.55192,
+      "lng": 74.332019,
+      "fillLevel": 95,
+      "capacity": 500,
+      "fillRate": 5.440885134295848,
+      "threshold": 80
+    },
+    {
+      "id": "BIN_12",
+      "lat": 31.567433,
+      "lng": 74.363888,
+      "fillLevel": 85,
+      "capacity": 200,
+      "fillRate": 5.760067325286537,
+      "threshold": 80
+    },
+    {
+      "id": "BIN_13",
+      "lat": 31.539756,
+      "lng": 74.333711,
+      "fillLevel": 92,
+      "capacity": 100,
+      "fillRate": 5.95923819221646,
+      "threshold": 80
+    },
+    {
+      "id": "BIN_14",
+      "lat": 31.56015,
+      "lng": 74.298202,
+      "fillLevel": 84,
+      "capacity": 200,
+      "fillRate": 5.001972592871212,
+      "threshold": 80
+    },
+    {
+      "id": "BIN_15",
+      "lat": 31.549725,
+      "lng": 74.343607,
+      "fillLevel": 92,
+      "capacity": 100,
+      "fillRate": 3.229031701617004,
+      "threshold": 80
+    },
+    {
+      "id": "BIN_16",
+      "lat": 31.562108,
+      "lng": 74.341372,
+      "fillLevel": 78,
+      "capacity": 100,
+      "fillRate": 4.749467102089452,
+      "threshold": 80
+    },
+    {
+      "id": "BIN_17",
+      "lat": 31.505289,
+      "lng": 74.342962,
+      "fillLevel": 64,
+      "capacity": 50,
+      "fillRate": 2.6746826664191876,
+      "threshold": 80
+    },
+    {
+      "id": "BIN_18",
+      "lat": 31.507372,
+      "lng": 74.336769,
+      "fillLevel": 77,
+      "capacity": 50,
+      "fillRate": 5.455500674594745,
+      "threshold": 80
+    },
+    {
+      "id": "BIN_19",
+      "lat": 31.521863,
+      "lng": 74.366456,
+      "fillLevel": 66,
+      "capacity": 50,
+      "fillRate": 2.6002230086862914,
+      "threshold": 80
+    },
+    {
+      "id": "BIN_20",
+      "lat": 31.568826,
+      "lng": 74.302364,
+      "fillLevel": 68,
+      "capacity": 200,
+      "fillRate": 5.852516446557114,
+      "threshold": 80
+    },
+    {
+      "id": "BIN_21",
+      "lat": 31.553774,
+      "lng": 74.340446,
+      "fillLevel": 65,
+      "capacity": 500,
+      "fillRate": 5.14924340359985,
+      "threshold": 80
+    },
+    {
+      "id": "BIN_22",
+      "lat": 31.54687,
+      "lng": 74.341968,
+      "fillLevel": 70,
+      "capacity": 100,
+      "fillRate": 3.1248710011893404,
+      "threshold": 80
+    },
+    {
+      "id": "BIN_23",
+      "lat": 31.54129,
+      "lng": 74.350108,
+      "fillLevel": 73,
+      "capacity": 100,
+      "fillRate": 2.604701808848954,
+      "threshold": 80
+    },
+    {
+      "id": "BIN_24",
+      "lat": 31.555368,
+      "lng": 74.382488,
+      "fillLevel": 77,
+      "capacity": 50,
+      "fillRate": 2.136783381723802,
+      "threshold": 80
+    },
+    {
+      "id": "BIN_25",
+      "lat": 31.565507,
+      "lng": 74.333478,
+      "fillLevel": 63,
+      "capacity": 500,
+      "fillRate": 2.59582342284147,
+      "threshold": 80
+    }
+  ],
+  "trucks": [
+    {
+      "id": "TRUCK_1",
+      "depot_id": "DEPOT_1",
+      "lat": 31.5497,
+      "lng": 74.3436,
+      "capacity": 50,
+      "currentLoad": 0,
+      "status": "idle",
+      "speed": 50
+    },
+    {
+      "id": "TRUCK_2",
+      "depot_id": "DEPOT_1",
+      "lat": 31.5497,
+      "lng": 74.3436,
+      "capacity": 100,
+      "currentLoad": 0,
+      "status": "idle",
+      "speed": 50
+    },
+    {
+      "id": "TRUCK_3",
+      "depot_id": "DEPOT_2",
+      "lat": 31.579700000000003,
+      "lng": 74.3836,
+      "capacity": 150,
+      "currentLoad": 0,
+      "status": "idle",
+      "speed": 50
+    },
+    {
+      "id": "TRUCK_4",
+      "depot_id": "DEPOT_2",
+      "lat": 31.579700000000003,
+      "lng": 74.3836,
+      "capacity": 150,
+      "currentLoad": 0,
+      "status": "idle",
+      "speed": 50
+    },
+    {
+      "id": "TRUCK_5",
+      "depot_id": "DEPOT_3",
+      "lat": 31.5197,
+      "lng": 74.3236,
+      "capacity": 200,
+      "currentLoad": 0,
+      "status": "idle",
+      "speed": 50
+    },
+    {
+      "id": "TRUCK_6",
+      "depot_id": "DEPOT_3",
+      "lat": 31.5197,
+      "lng": 74.3236,
+      "capacity": 200,
+      "currentLoad": 0,
+      "status": "idle",
+      "speed": 50
+    }
+  ],
+  "metadata": {
+    "total_depots": 3,
+    "total_bins": 25,
+    "total_trucks": 6,
+    "base_coordinates": "31.5497, 74.3436"
+  }
+}

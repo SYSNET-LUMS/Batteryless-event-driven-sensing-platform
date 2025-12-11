@@ -1,0 +1,202 @@
+{
+  "description": "Distant depot with clustered bins - tests depot-to-bin matrix optimization",
+  "depots": [
+    {
+      "id": "DEPOT_1",
+      "lat": 31.5497,
+      "lng": 74.3436,
+      "name": "City Center Depot"
+    },
+    {
+      "id": "DEPOT_2",
+      "lat": 31.9997,
+      "lng": 74.64359999999999,
+      "name": "Remote Depot"
+    }
+  ],
+  "bins": [
+    {
+      "id": "BIN_1",
+      "lat": 32.014366,
+      "lng": 74.668263,
+      "fillLevel": 72,
+      "capacity": 500,
+      "fillRate": 3.5,
+      "threshold": 80
+    },
+    {
+      "id": "BIN_2",
+      "lat": 32.000937,
+      "lng": 74.66465,
+      "fillLevel": 77,
+      "capacity": 500,
+      "fillRate": 3.5,
+      "threshold": 80
+    },
+    {
+      "id": "BIN_3",
+      "lat": 32.001059,
+      "lng": 74.654758,
+      "fillLevel": 82,
+      "capacity": 500,
+      "fillRate": 3.5,
+      "threshold": 80
+    },
+    {
+      "id": "BIN_4",
+      "lat": 31.993871,
+      "lng": 74.638055,
+      "fillLevel": 81,
+      "capacity": 500,
+      "fillRate": 3.5,
+      "threshold": 80
+    },
+    {
+      "id": "BIN_5",
+      "lat": 32.000351,
+      "lng": 74.639708,
+      "fillLevel": 77,
+      "capacity": 500,
+      "fillRate": 3.5,
+      "threshold": 80
+    },
+    {
+      "id": "BIN_6",
+      "lat": 32.011085,
+      "lng": 74.618313,
+      "fillLevel": 75,
+      "capacity": 500,
+      "fillRate": 3.5,
+      "threshold": 80
+    },
+    {
+      "id": "BIN_7",
+      "lat": 31.990063,
+      "lng": 74.637261,
+      "fillLevel": 87,
+      "capacity": 500,
+      "fillRate": 3.5,
+      "threshold": 80
+    },
+    {
+      "id": "BIN_8",
+      "lat": 31.999243,
+      "lng": 74.627621,
+      "fillLevel": 86,
+      "capacity": 500,
+      "fillRate": 3.5,
+      "threshold": 80
+    },
+    {
+      "id": "BIN_9",
+      "lat": 31.988939,
+      "lng": 74.672411,
+      "fillLevel": 87,
+      "capacity": 500,
+      "fillRate": 3.5,
+      "threshold": 80
+    },
+    {
+      "id": "BIN_10",
+      "lat": 32.006679,
+      "lng": 74.648175,
+      "fillLevel": 73,
+      "capacity": 500,
+      "fillRate": 3.5,
+      "threshold": 80
+    },
+    {
+      "id": "BIN_11",
+      "lat": 32.001023,
+      "lng": 74.670214,
+      "fillLevel": 89,
+      "capacity": 500,
+      "fillRate": 3.5,
+      "threshold": 80
+    },
+    {
+      "id": "BIN_12",
+      "lat": 31.984506,
+      "lng": 74.648571,
+      "fillLevel": 87,
+      "capacity": 500,
+      "fillRate": 3.5,
+      "threshold": 80
+    },
+    {
+      "id": "BIN_13",
+      "lat": 31.998134,
+      "lng": 74.641161,
+      "fillLevel": 75,
+      "capacity": 500,
+      "fillRate": 3.5,
+      "threshold": 80
+    },
+    {
+      "id": "BIN_14",
+      "lat": 32.018074,
+      "lng": 74.631853,
+      "fillLevel": 81,
+      "capacity": 500,
+      "fillRate": 3.5,
+      "threshold": 80
+    },
+    {
+      "id": "BIN_15",
+      "lat": 31.987107,
+      "lng": 74.64669,
+      "fillLevel": 84,
+      "capacity": 500,
+      "fillRate": 3.5,
+      "threshold": 80
+    }
+  ],
+  "trucks": [
+    {
+      "id": "TRUCK_1",
+      "depot_id": "DEPOT_1",
+      "lat": 31.5497,
+      "lng": 74.3436,
+      "capacity": 1000,
+      "currentLoad": 0,
+      "status": "idle",
+      "speed": 50
+    },
+    {
+      "id": "TRUCK_2",
+      "depot_id": "DEPOT_1",
+      "lat": 31.5497,
+      "lng": 74.3436,
+      "capacity": 1000,
+      "currentLoad": 0,
+      "status": "idle",
+      "speed": 50
+    },
+    {
+      "id": "TRUCK_3",
+      "depot_id": "DEPOT_1",
+      "lat": 31.5497,
+      "lng": 74.3436,
+      "capacity": 1000,
+      "currentLoad": 0,
+      "status": "idle",
+      "speed": 50
+    },
+    {
+      "id": "TRUCK_4",
+      "depot_id": "DEPOT_2",
+      "lat": 31.9997,
+      "lng": 74.64359999999999,
+      "capacity": 1000,
+      "currentLoad": 0,
+      "status": "idle",
+      "speed": 50
+    }
+  ],
+  "metadata": {
+    "total_depots": 2,
+    "total_bins": 15,
+    "total_trucks": 4,
+    "base_coordinates": "31.5497, 74.3436"
+  }
+}

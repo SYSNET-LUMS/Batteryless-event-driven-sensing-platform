@@ -1,0 +1,192 @@
+{
+  "description": "Sequential dispatch cycles - tests continuous operation and truck sync",
+  "depots": [
+    {
+      "id": "DEPOT_1",
+      "lat": 31.5497,
+      "lng": 74.3436,
+      "name": "Central Depot"
+    },
+    {
+      "id": "DEPOT_2",
+      "lat": 31.579700000000003,
+      "lng": 74.3736,
+      "name": "East Depot"
+    }
+  ],
+  "bins": [
+    {
+      "id": "BIN_1",
+      "lat": 31.571108,
+      "lng": 74.314544,
+      "fillLevel": 70,
+      "capacity": 500,
+      "fillRate": 3.5258403992843954,
+      "threshold": 80
+    },
+    {
+      "id": "BIN_2",
+      "lat": 31.539411,
+      "lng": 74.350526,
+      "fillLevel": 72,
+      "capacity": 500,
+      "fillRate": 4.022616088666597,
+      "threshold": 80
+    },
+    {
+      "id": "BIN_3",
+      "lat": 31.551081,
+      "lng": 74.33169,
+      "fillLevel": 74,
+      "capacity": 500,
+      "fillRate": 4.301087049507356,
+      "threshold": 80
+    },
+    {
+      "id": "BIN_4",
+      "lat": 31.535877,
+      "lng": 74.350466,
+      "fillLevel": 76,
+      "capacity": 500,
+      "fillRate": 3.0714923342484144,
+      "threshold": 80
+    },
+    {
+      "id": "BIN_5",
+      "lat": 31.550745,
+      "lng": 74.346287,
+      "fillLevel": 78,
+      "capacity": 500,
+      "fillRate": 3.5754798965987016,
+      "threshold": 80
+    },
+    {
+      "id": "BIN_6",
+      "lat": 31.555414,
+      "lng": 74.361692,
+      "fillLevel": 80,
+      "capacity": 500,
+      "fillRate": 3.359593974157138,
+      "threshold": 80
+    },
+    {
+      "id": "BIN_7",
+      "lat": 31.572367,
+      "lng": 74.33929,
+      "fillLevel": 82,
+      "capacity": 500,
+      "fillRate": 3.5885943292486955,
+      "threshold": 80
+    },
+    {
+      "id": "BIN_8",
+      "lat": 31.523618,
+      "lng": 74.37182,
+      "fillLevel": 84,
+      "capacity": 500,
+      "fillRate": 4.586555922262563,
+      "threshold": 80
+    },
+    {
+      "id": "BIN_9",
+      "lat": 31.569226,
+      "lng": 74.329,
+      "fillLevel": 70,
+      "capacity": 500,
+      "fillRate": 3.7635442145407536,
+      "threshold": 80
+    },
+    {
+      "id": "BIN_10",
+      "lat": 31.568354,
+      "lng": 74.348205,
+      "fillLevel": 73,
+      "capacity": 500,
+      "fillRate": 4.531789448110463,
+      "threshold": 80
+    },
+    {
+      "id": "BIN_11",
+      "lat": 31.539465,
+      "lng": 74.361047,
+      "fillLevel": 76,
+      "capacity": 500,
+      "fillRate": 3.2162548209712547,
+      "threshold": 80
+    },
+    {
+      "id": "BIN_12",
+      "lat": 31.5531,
+      "lng": 74.3388,
+      "fillLevel": 79,
+      "capacity": 500,
+      "fillRate": 4.337082784908222,
+      "threshold": 80
+    },
+    {
+      "id": "BIN_13",
+      "lat": 31.554739,
+      "lng": 74.329428,
+      "fillLevel": 82,
+      "capacity": 500,
+      "fillRate": 4.988981238980084,
+      "threshold": 80
+    },
+    {
+      "id": "BIN_14",
+      "lat": 31.560115,
+      "lng": 74.376996,
+      "fillLevel": 85,
+      "capacity": 500,
+      "fillRate": 4.874789728423828,
+      "threshold": 80
+    },
+    {
+      "id": "BIN_15",
+      "lat": 31.565707,
+      "lng": 74.359846,
+      "fillLevel": 88,
+      "capacity": 500,
+      "fillRate": 3.7046343771249797,
+      "threshold": 80
+    }
+  ],
+  "trucks": [
+    {
+      "id": "TRUCK_1",
+      "depot_id": "DEPOT_1",
+      "lat": 31.5497,
+      "lng": 74.3436,
+      "capacity": 1000,
+      "currentLoad": 0,
+      "status": "idle",
+      "speed": 50
+    },
+    {
+      "id": "TRUCK_2",
+      "depot_id": "DEPOT_1",
+      "lat": 31.5497,
+      "lng": 74.3436,
+      "capacity": 1000,
+      "currentLoad": 0,
+      "status": "idle",
+      "speed": 50
+    },
+    {
+      "id": "TRUCK_3",
+      "depot_id": "DEPOT_2",
+      "lat": 31.579700000000003,
+      "lng": 74.3736,
+      "capacity": 1000,
+      "currentLoad": 0,
+      "status": "idle",
+      "speed": 50
+    }
+  ],
+  "metadata": {
+    "total_depots": 2,
+    "total_bins": 15,
+    "total_trucks": 3,
+    "base_coordinates": "31.5497, 74.3436"
+  }
+}

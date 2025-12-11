@@ -1,0 +1,40 @@
+{
+  "description": "Absolute minimum: 1 depot, 1 bin, 1 truck",
+  "depots": [
+    {
+      "id": "DEPOT_1",
+      "lat": 31.5497,
+      "lng": 74.3436,
+      "name": "Main Depot"
+    }
+  ],
+  "bins": [
+    {
+      "id": "BIN_1",
+      "lat": 31.550700000000003,
+      "lng": 74.3446,
+      "fillLevel": 85,
+      "capacity": 500,
+      "fillRate": 3.0,
+      "threshold": 80
+    }
+  ],
+  "trucks": [
+    {
+      "id": "TRUCK_1",
+      "depot_id": "DEPOT_1",
+      "lat": 31.5497,
+      "lng": 74.3436,
+      "capacity": 1000,
+      "currentLoad": 0,
+      "status": "idle",
+      "speed": 50
+    }
+  ],
+  "metadata": {
+    "total_depots": 1,
+    "total_bins": 1,
+    "total_trucks": 1,
+    "base_coordinates": "31.5497, 74.3436"
+  }
+}

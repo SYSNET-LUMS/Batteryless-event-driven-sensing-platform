@@ -1,0 +1,88 @@
+{
+  "description": "Single critical bin with 4 depots - tests nearest depot selection",
+  "depots": [
+    {
+      "id": "DEPOT_1",
+      "lat": 31.579700000000003,
+      "lng": 74.3736,
+      "name": "NE Depot"
+    },
+    {
+      "id": "DEPOT_2",
+      "lat": 31.579700000000003,
+      "lng": 74.3136,
+      "name": "NW Depot"
+    },
+    {
+      "id": "DEPOT_3",
+      "lat": 31.5197,
+      "lng": 74.3736,
+      "name": "SE Depot"
+    },
+    {
+      "id": "DEPOT_4",
+      "lat": 31.5197,
+      "lng": 74.3136,
+      "name": "SW Depot"
+    }
+  ],
+  "bins": [
+    {
+      "id": "BIN_1",
+      "lat": 31.5497,
+      "lng": 74.3436,
+      "fillLevel": 95,
+      "capacity": 500,
+      "fillRate": 8.0,
+      "threshold": 80
+    }
+  ],
+  "trucks": [
+    {
+      "id": "TRUCK_1",
+      "depot_id": "DEPOT_1",
+      "lat": 31.579700000000003,
+      "lng": 74.3736,
+      "capacity": 1000,
+      "currentLoad": 0,
+      "status": "idle",
+      "speed": 50
+    },
+    {
+      "id": "TRUCK_2",
+      "depot_id": "DEPOT_2",
+      "lat": 31.579700000000003,
+      "lng": 74.3136,
+      "capacity": 1000,
+      "currentLoad": 0,
+      "status": "idle",
+      "speed": 50
+    },
+    {
+      "id": "TRUCK_3",
+      "depot_id": "DEPOT_3",
+      "lat": 31.5197,
+      "lng": 74.3736,
+      "capacity": 1000,
+      "currentLoad": 0,
+      "status": "idle",
+      "speed": 50
+    },
+    {
+      "id": "TRUCK_4",
+      "depot_id": "DEPOT_4",
+      "lat": 31.5197,
+      "lng": 74.3136,
+      "capacity": 1000,
+      "currentLoad": 0,
+      "status": "idle",
+      "speed": 50
+    }
+  ],
+  "metadata": {
+    "total_depots": 4,
+    "total_bins": 1,
+    "total_trucks": 4,
+    "base_coordinates": "31.5497, 74.3436"
+  }
+}

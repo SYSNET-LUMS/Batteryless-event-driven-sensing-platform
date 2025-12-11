@@ -1,0 +1,59 @@
+{
+  "description": "Critical bin: 1 depot, 2 bins (1 critical), 2 trucks",
+  "depots": [
+    {
+      "id": "DEPOT_1",
+      "lat": 31.5497,
+      "lng": 74.3436,
+      "name": "Main Depot"
+    }
+  ],
+  "bins": [
+    {
+      "id": "BIN_1",
+      "lat": 31.548104,
+      "lng": 74.342161,
+      "fillLevel": 95,
+      "capacity": 500,
+      "fillRate": 5.0,
+      "threshold": 80
+    },
+    {
+      "id": "BIN_2",
+      "lat": 31.555797,
+      "lng": 74.341906,
+      "fillLevel": 50,
+      "capacity": 500,
+      "fillRate": 2.0,
+      "threshold": 80
+    }
+  ],
+  "trucks": [
+    {
+      "id": "TRUCK_1",
+      "depot_id": "DEPOT_1",
+      "lat": 31.5497,
+      "lng": 74.3436,
+      "capacity": 1000,
+      "currentLoad": 0,
+      "status": "idle",
+      "speed": 50
+    },
+    {
+      "id": "TRUCK_2",
+      "depot_id": "DEPOT_1",
+      "lat": 31.5497,
+      "lng": 74.3436,
+      "capacity": 1000,
+      "currentLoad": 0,
+      "status": "idle",
+      "speed": 50
+    }
+  ],
+  "metadata": {
+    "total_depots": 1,
+    "total_bins": 2,
+    "total_trucks": 2,
+    "base_coordinates": "31.5497, 74.3436"
+  }
+}
