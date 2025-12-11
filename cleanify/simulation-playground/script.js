@@ -1877,7 +1877,10 @@ function updateFilesListUI(files) {
         return;
     }
 
-    container.innerHTML = files.map(file => `
+    // Sort files by name alphabetically
+    const sortedFiles = files.sort((a, b) => a.name.localeCompare(b.name));
+
+    container.innerHTML = sortedFiles.map(file => `
         <div class="file-item" onclick="loadSavedFile('${file.name}')">
             <span class="file-name">${file.name}</span>
             <span class="file-info">${formatFileDate(file.modified)} • ${formatFileSize(file.size)}</span>
