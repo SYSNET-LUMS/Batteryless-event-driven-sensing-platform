@@ -43,10 +43,16 @@ def dispatch_trucks():
         depot = depots[0]
         
         # UNIFIED GLOBAL OPTIMIZATION: Get all non-dispatched bins
+        # Filter bins that are neither dispatched nor assigned to active trucks
         undispatch_bins = [
             b for b in bins 
-            if not b.get('dispatched', False)
+            if not b.get('dispatched', False) and not b.get('assigned_truck')
         ]
+        
+        print(f"📊 Dispatch check: {len(bins)} total bins, {len(undispatch_bins)} available for dispatch")
+        for b in bins:
+            if b.get('dispatched') or b.get('assigned_truck'):
+                print(f"   🔒 {b['id']}: dispatched={b.get('dispatched')}, assigned_truck={b.get('assigned_truck')}")
         
         if not undispatch_bins:
             return jsonify({
@@ -100,10 +106,12 @@ def dispatch_trucks():
             else:
                 routes = _simple_fallback(critical_bins + near_threshold_bins, idle_trucks)
         
-        # Step 6: Update system state
+        # Step 6: Update system state IMMEDIATELY to prevent race conditions
         if routes:
             _update_dispatch_state(repo, routes)
-            print(f"✅ Dispatched {len(routes)} trucks, updated system state")
+            print(f"✅ Dispatched {len(routes)} trucks, marked bins as dispatched")
+            for route in routes:
+                print(f"   🚛 {route['truck_id']}: bins={route['bin_ids']}")
         
         return jsonify({
             'status': 'success',

@@ -1,5 +1,6 @@
 from flask import Blueprint, jsonify, request, current_app
 from typing import Any, cast
+import threading
 
 bp = Blueprint('files', __name__, url_prefix='/api')
 
@@ -18,28 +19,40 @@ def save_system():
         print(f"⚠ Save failed: {e}")
         return jsonify({"status": "error", "message": str(e)}), 500
 
-@bp.route('/load_system/<filename>', methods=['GET'])
+@bp.route('/load_system/<path:filename>', methods=['GET'])
 def load_system(filename):
     """Load system state from file"""
     try:
         app = cast(Any, current_app)
-        system_state = app.file_service.load_system(filename)
+        # Normalize filename to prevent directory traversal and bad encodings
+        safe_name = filename.strip()
+        if '/' in safe_name or safe_name.startswith('..'):
+            return jsonify({
+                'status': 'error',
+                'message': 'Invalid filename'
+            }), 400
+
+        system_state = app.file_service.load_system(safe_name)
         if system_state is None:
             return jsonify({
                 'status': 'error',
-                'message': f'File not found: {filename}'
+                'message': f'File not found: {safe_name}'
             }), 404
         
         # Restore system state in repository
         repo = app.system_repository
         repo.set_state(system_state)
-        _rebuild_distance_matrix(app)
+        # Trigger async distance matrix rebuild unless explicitly disabled
+        rebuild = request.args.get('rebuild', 'true').lower() in ('1', 'true', 'yes')
+        if rebuild:
+            _trigger_async_rebuild(app)
         
-        print(f"System loaded from: {filename}")
+        print(f"System loaded from: {safe_name}")
         return jsonify({
             'status': 'success',
             'systemState': system_state,
-            'filename': filename
+            'filename': safe_name,
+            'rebuild': rebuild
         })
         
     except Exception as e:
@@ -47,12 +60,47 @@ def load_system(filename):
         return jsonify({"status": "error", "message": str(e)}), 500
 
 
-def _rebuild_distance_matrix(app) -> None:
-    service = getattr(app, 'distance_matrix_service', None)
-    if not service:
+_rebuild_lock = threading.Lock()
+_rebuild_in_progress = False
+
+def _trigger_async_rebuild(app) -> None:
+    global _rebuild_in_progress
+    if _rebuild_in_progress:
         return
-    repo = app.system_repository
-    service.build_matrices(repo.get_bins(), repo.get_depots(), force=True)
+    def worker():
+        global _rebuild_in_progress
+        with _rebuild_lock:
+            _rebuild_in_progress = True
+        try:
+            # Acquire the real Flask app object and push app context
+            from flask import current_app as flask_current_app
+            try:
+                app_obj = flask_current_app._get_current_object()
+            except Exception:
+                app_obj = app
+            if not app_obj:
+                return
+            with app_obj.app_context():
+                service = getattr(app_obj, 'distance_matrix_service', None)
+                if not service:
+                    return
+                repo = app_obj.system_repository
+                service.build_matrices(repo.get_bins(), repo.get_depots(), force=True)
+        finally:
+            with _rebuild_lock:
+                _rebuild_in_progress = False
+    t = threading.Thread(target=worker, daemon=True)
+    t.start()
+
+@bp.route('/distance_matrix/status', methods=['GET'])
+def distance_matrix_status():
+    app = cast(Any, current_app)
+    service = getattr(app, 'distance_matrix_service', None)
+    summary = getattr(service, 'last_build_summary', {}) if service else {}
+    return jsonify({
+        'inProgress': _rebuild_in_progress,
+        'summary': summary
+    })
 
 @bp.route('/saved_files', methods=['GET'])
 def get_saved_files():
