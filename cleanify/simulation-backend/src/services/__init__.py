@@ -8,6 +8,7 @@ from .routing_service import RoutingService
 from .file_service import FileService
 from .schedule_service import ScheduleService
 from .distance_matrix_service import DistanceMatrixService
+from .dynamic_threshold_service import DynamicThresholdService
 
 # External services
 from .external.osrm_service import OSRMService
@@ -23,6 +24,7 @@ __all__ = [
     'FileService',
     'ScheduleService',
     'DistanceMatrixService',
+    'DynamicThresholdService',
     
     # External services
     'OSRMService',

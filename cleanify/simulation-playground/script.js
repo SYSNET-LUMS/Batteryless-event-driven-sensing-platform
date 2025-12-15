@@ -1261,8 +1261,7 @@ function updateBinsList() {
     const queueSet = new Set(backendQueue);
     
     items.bins.forEach(bin => {
-        const dynamicThreshold = bin.dynamic_threshold || bin.threshold || 80;
-        const staticThreshold = bin.threshold || 80;
+    const dynamicThreshold = (bin.dynamic_threshold ?? bin.threshold ?? 80);
         const isTargeted = items.trucks.some(truck => truck.targetBin === bin);
         const inQueue = queueSet.has(bin.id);
         
@@ -1271,9 +1270,7 @@ function updateBinsList() {
             (bin.fillLevel >= dynamicThreshold || inQueue) ? 'NEEDS COLLECTION' : 'OK';
 
         // Show both thresholds if they differ
-        const thresholdText = Math.abs(dynamicThreshold - staticThreshold) > 0.1
-            ? `DT: ${dynamicThreshold.toFixed(2)}%`
-            : `T: ${staticThreshold}%`;
+        const thresholdText = `DT: ${dynamicThreshold.toFixed(2)}%`;
 
         const card = document.createElement('div');
         let cardClass = `item-card ${getStatusClass(bin.fillLevel)}`;

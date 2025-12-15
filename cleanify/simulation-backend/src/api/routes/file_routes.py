@@ -42,6 +42,7 @@ def load_system(filename):
         # Restore system state in repository
         repo = app.system_repository
         repo.set_state(system_state)
+        _apply_dynamic_thresholds(app, repo.get_bins())
         # Trigger async distance matrix rebuild unless explicitly disabled
         rebuild = request.args.get('rebuild', 'true').lower() in ('1', 'true', 'yes')
         if rebuild:
@@ -116,3 +117,10 @@ def get_saved_files():
     except Exception as e:
         print(f"⚠ Failed to get files list: {e}")
         return jsonify({"status": "error", "message": str(e)}), 500
+
+
+def _apply_dynamic_thresholds(app, bins) -> None:
+    service = getattr(app, 'dynamic_threshold_service', None)
+    if not service or not bins:
+        return
+    service.apply_to_bins(bins)

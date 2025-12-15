@@ -5,9 +5,15 @@ Prevents duplicate dispatching by updating system state immediately
 """
 
 from flask import Blueprint, jsonify, request, current_app
-from typing import Any, cast, Dict
+from typing import Any, cast, Dict, Optional
+
+from utils.distance import calculate_haversine_distance
 
 bp = Blueprint('dispatch', __name__, url_prefix='/api')
+
+SINGLE_TRIGGER_MAX_BINS = 3
+SINGLE_TRIGGER_RADIUS_MIN = 750.0  # meters
+SINGLE_TRIGGER_RADIUS_MAX = 4000.0  # meters
 
 
 @bp.route('/dispatch', methods=['POST'])
@@ -24,8 +30,9 @@ def dispatch_trucks():
         
         app = cast(Any, current_app)
         repo = app.system_repository
-        traffic_service = app.traffic_service
         vroom_service = app.vroom_service
+        dt_service = getattr(app, 'dynamic_threshold_service', None)
+        distance_service = getattr(app, 'distance_matrix_service', None)
         
         # Get system state
         bins = repo.get_bins()
@@ -41,6 +48,9 @@ def dispatch_trucks():
             })
         
         depot = depots[0]
+        if dt_service:
+            # Annotate all bins so downstream consumers (frontend/tests) see DT
+            dt_service.apply_to_bins(bins)
         
         # UNIFIED GLOBAL OPTIMIZATION: Get all non-dispatched bins
         # Filter bins that are neither dispatched nor assigned to active trucks
@@ -90,21 +100,53 @@ def dispatch_trucks():
                     'low_urgency': len(low_urgency_bins)
                 }
             })
+
+        # Step 4: Select bins and trucks for the current dispatch wave
+        active_bins = _select_active_dispatch_bins(
+            undispatch_bins, critical_bins, depot
+        )
+        active_trucks = _select_trucks_for_active_dispatch(
+            idle_trucks, critical_bins, depot
+        )
+
+        if not active_bins or not active_trucks:
+            waiting_ids = [b['id'] for b in undispatch_bins]
+            return jsonify({
+                'status': 'success',
+                'routes': [],
+                'waiting': waiting_ids,
+                'message': 'No eligible bins or trucks after filtering'
+            })
+
+        active_bin_ids = {b.get('id') for b in active_bins if b.get('id')}
+        active_critical_bins = [
+            b for b in critical_bins
+            if b.get('id') in active_bin_ids
+        ]
         
-        # Step 4: Ensure distance matrix is available before VROOM
-        _ensure_distance_matrix(app, undispatch_bins)
+        # Step 5: Ensure distance matrix is available before VROOM
+        _ensure_distance_matrix(app, active_bins)
+        proximity_routes = _build_proximity_routes(
+            active_bins, active_trucks, depot, distance_service
+        )
         
-        # Step 5: GLOBAL VROOM OPTIMIZATION with all bins
+        # Step 6: GLOBAL VROOM OPTIMIZATION with selected bins
         routes = []
-        if undispatch_bins:
+        if active_bins:
             vroom_result = vroom_service.optimize_routes_with_constraints(
-                undispatch_bins, idle_trucks, depot, critical_bins, simulation_time
+                active_bins, active_trucks, depot, active_critical_bins, simulation_time
             )
             
             if vroom_result['status'] == 'success':
                 routes = vroom_result['routes']
             else:
-                routes = _simple_fallback(critical_bins + near_threshold_bins, idle_trucks)
+                print("⚠️ Falling back to proximity routes because VROOM failed")
+                routes = proximity_routes
+
+        if _should_use_proximity_routes(routes, proximity_routes, active_trucks):
+            if routes != proximity_routes:
+                print("♻️ Rebalancing routes using proximity heuristic")
+            routes = proximity_routes
         
         # Step 6: Update system state IMMEDIATELY to prevent race conditions
         if routes:
@@ -205,15 +247,29 @@ def _classify_bins_by_urgency(bins: list, simulation_time: float) -> tuple:
     for b in bins:
         fill = b.get('fillLevel', 0)
         time_overflow = b.get('time_to_overflow', float('inf'))
-        
-        if fill >= 90 or time_overflow < 1.0:
+        threshold = _effective_threshold(b)
+        near_threshold_floor = max(0.0, threshold - 5.0)
+
+        if fill >= threshold or time_overflow < 1.0:
             critical.append(b)
-        elif fill >= 70 or time_overflow < 4.0:
+        elif fill >= near_threshold_floor or time_overflow < 4.0:
             near_threshold.append(b)
         else:
             low_urgency.append(b)
     
     return critical, near_threshold, low_urgency
+
+
+def _effective_threshold(bin_data: Dict) -> float:
+    return float(bin_data.get('dynamic_threshold') or bin_data.get('threshold', 80))
+
+
+def _bin_volume(bin_data: Dict) -> float:
+    capacity = float(bin_data.get('capacity', 500))
+    fill_pct = float(bin_data.get('fillLevel', 0))
+    capacity = max(0.0, capacity)
+    fill_pct = max(0.0, min(100.0, fill_pct))
+    return (fill_pct / 100.0) * capacity
 
 
 def _should_dispatch_unified(critical_bins: list, near_threshold_bins: list, 
@@ -232,11 +288,14 @@ def _should_dispatch_unified(critical_bins: list, near_threshold_bins: list,
     # Dispatch if we have 40% of avg truck capacity in near-threshold bins
     if not near_threshold_bins:
         return False
-    
-    total_waste = sum(b.get('fillLevel', 0) for b in near_threshold_bins)
-    avg_capacity = sum(t.get('capacity', 1500) for t in trucks) / len(trucks)
-    
-    return total_waste / avg_capacity >= 0.4
+
+    total_waste_volume = sum(_bin_volume(b) for b in near_threshold_bins)
+    avg_capacity = sum(max(t.get('capacity', 1500), 1) for t in trucks) / len(trucks)
+
+    if avg_capacity <= 0:
+        return False
+
+    return (total_waste_volume / avg_capacity) >= 0.35
 
 
 def _should_dispatch_batch(urgent_bins: list, trucks: list) -> tuple[bool, str]:
@@ -258,9 +317,10 @@ def _should_dispatch_batch(urgent_bins: list, trucks: list) -> tuple[bool, str]:
     if not urgent_bins or not trucks:
         return False, "No bins or trucks available"
     
-    # Check for critical bins (>90% fill)
-    CRITICAL_THRESHOLD = 90
-    critical_bins = [b for b in urgent_bins if b.get('fillLevel', 0) >= CRITICAL_THRESHOLD]
+    # Check for bins that exceeded their effective threshold
+    critical_bins = [
+        b for b in urgent_bins if b.get('fillLevel', 0) >= _effective_threshold(b)
+    ]
     
     if critical_bins:
         return True, f"{len(critical_bins)} critical bins (>90% full)"
@@ -429,6 +489,304 @@ def update_truck_status():
         import traceback
         traceback.print_exc()
         return jsonify({'status': 'error', 'message': str(e)}), 500
+
+
+def _should_use_proximity_routes(current_routes: list, proximity_routes: list, trucks: list) -> bool:
+    if not proximity_routes:
+        return False
+    if not current_routes:
+        return True
+
+    current_trucks = {
+        route['truck_id']
+        for route in current_routes
+        if route.get('bin_ids')
+    }
+    proximity_trucks = {route['truck_id'] for route in proximity_routes}
+
+    if not current_trucks and proximity_trucks:
+        return True
+
+    if len(trucks) > 1 and len(proximity_trucks) > len(current_trucks):
+        return True
+
+    covered_by_current = {
+        bin_id
+        for route in current_routes
+        for bin_id in route.get('bin_ids', [])
+    }
+    covered_by_proximity = {
+        bin_id
+        for route in proximity_routes
+        for bin_id in route.get('bin_ids', [])
+    }
+
+    return bool(covered_by_proximity - covered_by_current)
+
+
+def _select_active_dispatch_bins(
+    bins: list,
+    critical_bins: list,
+    depot: Dict
+) -> list:
+    if not bins:
+        return []
+
+    if len(critical_bins) == 1:
+        return _cluster_bins_around_primary(critical_bins[0], bins, depot)
+
+    return bins
+
+
+def _cluster_bins_around_primary(primary_bin: Dict, bins: list, depot: Dict) -> list:
+    if not primary_bin:
+        return bins
+
+    primary_id = primary_bin.get('id')
+    cluster = []
+    seen_ids = set()
+
+    for bin_data in bins:
+        bin_id = bin_data.get('id')
+        if bin_id and bin_id == primary_id:
+            cluster.append(bin_data)
+            seen_ids.add(bin_id)
+            break
+
+    others = [b for b in bins if b.get('id') not in seen_ids]
+
+    primary_depot_distance = _distance_from_bin_to_depot(primary_bin, depot)
+    if not primary_depot_distance or primary_depot_distance == float('inf'):
+        primary_depot_distance = SINGLE_TRIGGER_RADIUS_MAX
+
+    radius = max(
+        SINGLE_TRIGGER_RADIUS_MIN,
+        min(primary_depot_distance * 0.6, SINGLE_TRIGGER_RADIUS_MAX)
+    )
+
+    def distance_to_primary(candidate: Dict) -> float:
+        return _distance_between_coords(
+            primary_bin.get('lat'), primary_bin.get('lng'),
+            candidate.get('lat'), candidate.get('lng')
+        )
+
+    ordered_candidates = sorted(
+        others,
+        key=lambda candidate: (
+            distance_to_primary(candidate),
+            -float(candidate.get('fillRate', 0.0))
+        )
+    )
+
+    for candidate in ordered_candidates:
+        if len(cluster) >= SINGLE_TRIGGER_MAX_BINS:
+            break
+
+        dist_to_primary = distance_to_primary(candidate)
+        depot_distance = _distance_from_bin_to_depot(candidate, depot)
+
+        same_direction = dist_to_primary <= depot_distance * 0.8
+        within_radius = dist_to_primary <= radius
+        urgent_candidate = candidate.get('fillLevel', 0) >= _effective_threshold(candidate) - 5
+
+        if same_direction or within_radius or urgent_candidate:
+            cluster.append(candidate)
+
+    return cluster if cluster else bins
+
+
+def _select_trucks_for_active_dispatch(
+    trucks: list,
+    critical_bins: list,
+    depot: Dict
+) -> list:
+    if not trucks:
+        return []
+
+    if len(critical_bins) == 1:
+        primary_bin = critical_bins[0]
+        sorted_trucks = sorted(
+            [t for t in trucks if t.get('id')],
+            key=lambda truck: _distance_truck_to_bin(truck, primary_bin, depot)
+        )
+        if sorted_trucks:
+            return sorted_trucks[:1]
+
+    return trucks
+
+
+def _build_proximity_routes(
+    bins: list,
+    trucks: list,
+    depot: Dict,
+    distance_service: Optional[Any] = None
+) -> list:
+    if not bins or not trucks:
+        return []
+
+    assignments = _assign_bins_to_trucks_by_distance(bins, trucks, depot)
+    routes = []
+
+    for truck in trucks:
+        truck_id = truck.get('id')
+        if not truck_id:
+            continue
+        assigned_bins = assignments.get(truck_id, [])
+        if not assigned_bins:
+            continue
+
+        ordered_bins, total_distance = _order_bins_for_truck(
+            truck, assigned_bins, depot, distance_service
+        )
+        if not ordered_bins:
+            continue
+
+        speed_kmh = max(float(truck.get('speed', 40) or 40), 1.0)
+        duration_seconds = int(((total_distance / 1000.0) / speed_kmh) * 3600)
+
+        routes.append({
+            'truck_id': truck_id,
+            'bin_ids': [b['id'] for b in ordered_bins if b.get('id')],
+            'distance': int(total_distance),
+            'duration': max(duration_seconds, 0)
+        })
+
+    return [route for route in routes if route['bin_ids']]
+
+
+def _assign_bins_to_trucks_by_distance(bins: list, trucks: list, depot: Dict) -> Dict[str, list]:
+    assignments = {truck['id']: [] for truck in trucks if truck.get('id')}
+    if not assignments:
+        return {}
+
+    truck_loads = {truck_id: 0.0 for truck_id in assignments.keys()}
+    bin_queue = sorted(
+        [b for b in bins if b.get('id')],
+        key=lambda b: (
+            -float(b.get('urgency_score', b.get('fillLevel', 0))),
+            b['id']
+        )
+    )
+
+    for bin_data in bin_queue:
+        best_truck = None
+        best_score = None
+        for truck in trucks:
+            truck_id = truck.get('id')
+            if truck_id not in assignments:
+                continue
+            dist = _distance_truck_to_bin(truck, bin_data, depot)
+            score = (dist, truck_loads[truck_id])
+            if best_score is None or score < best_score:
+                best_score = score
+                best_truck = truck
+        if best_truck is None:
+            continue
+        truck_id = best_truck['id']
+        assignments[truck_id].append(bin_data)
+        truck_loads[truck_id] += _bin_volume(bin_data)
+
+    return assignments
+
+
+def _order_bins_for_truck(
+    truck: Dict,
+    assigned_bins: list,
+    depot: Dict,
+    distance_service: Optional[Any] = None
+) -> tuple[list, float]:
+    remaining = list(assigned_bins)
+    ordered: list = []
+    total_distance = 0.0
+    current_lat, current_lng = _truck_coordinates(truck, depot)
+    current_bin: Optional[Dict] = None
+
+    while remaining:
+        next_bin = min(
+            remaining,
+            key=lambda b: _distance_to_bin(current_bin, current_lat, current_lng, b, distance_service)
+        )
+        next_distance = _distance_to_bin(
+            current_bin, current_lat, current_lng, next_bin, distance_service
+        )
+        total_distance += next_distance
+        ordered.append(next_bin)
+        current_bin = next_bin
+        current_lat = next_bin.get('lat')
+        current_lng = next_bin.get('lng')
+        remaining.remove(next_bin)
+
+    if ordered:
+        total_distance += _distance_from_bin_to_depot(ordered[-1], depot, distance_service)
+
+    return ordered, total_distance
+
+
+def _distance_to_bin(
+    current_bin: Optional[Dict],
+    current_lat: Optional[float],
+    current_lng: Optional[float],
+    target_bin: Dict,
+    distance_service: Optional[Any] = None
+) -> float:
+    if current_bin and distance_service:
+        bin_id = current_bin.get('id')
+        target_id = target_bin.get('id')
+        if bin_id and target_id:
+            cached = distance_service.get_bin_to_bin_distance(bin_id, target_id)
+            if cached is not None:
+                return cached
+
+    if current_bin:
+        return _distance_between_coords(
+            current_bin.get('lat'), current_bin.get('lng'),
+            target_bin.get('lat'), target_bin.get('lng')
+        )
+
+    return _distance_between_coords(
+        current_lat, current_lng, target_bin.get('lat'), target_bin.get('lng')
+    )
+
+
+def _distance_from_bin_to_depot(
+    bin_data: Dict,
+    depot: Dict,
+    distance_service: Optional[Any] = None
+) -> float:
+    depot_id = depot.get('id')
+    bin_id = bin_data.get('id')
+    if distance_service and depot_id and bin_id:
+        cached = distance_service.get_bin_to_depot_distance(bin_id, depot_id)
+        if cached is not None:
+            return cached
+    return _distance_between_coords(
+        bin_data.get('lat'), bin_data.get('lng'), depot.get('lat'), depot.get('lng')
+    )
+
+
+def _distance_truck_to_bin(truck: Dict, bin_data: Dict, depot: Dict) -> float:
+    lat, lng = _truck_coordinates(truck, depot)
+    return _distance_between_coords(lat, lng, bin_data.get('lat'), bin_data.get('lng'))
+
+
+def _truck_coordinates(truck: Dict, depot: Dict) -> tuple[Optional[float], Optional[float]]:
+    lat = truck.get('lat')
+    lng = truck.get('lng')
+    if lat is None or lng is None:
+        lat = depot.get('lat')
+        lng = depot.get('lng')
+    return lat, lng
+
+
+def _distance_between_coords(
+    lat1: Optional[float],
+    lng1: Optional[float],
+    lat2: Optional[float],
+    lng2: Optional[float]
+) -> float:
+    if None in (lat1, lng1, lat2, lng2):
+        return float('inf')
+    return calculate_haversine_distance(float(lat1), float(lng1), float(lat2), float(lng2))
 
 
 def _simple_fallback(bins: list, trucks: list) -> list:

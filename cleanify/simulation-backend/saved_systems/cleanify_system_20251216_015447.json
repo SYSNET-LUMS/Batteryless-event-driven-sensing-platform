@@ -1,0 +1,74 @@
+{
+  "bins": [
+    {
+      "lat": 31.490016407285992,
+      "lng": 74.39786143172299,
+      "fillLevel": 20,
+      "capacity": 500,
+      "fillRate": 8.5,
+      "threshold": 80,
+      "id": "BIN_1",
+      "dynamic_threshold": 59.2
+    },
+    {
+      "lat": 31.477719706557235,
+      "lng": 74.38712907058694,
+      "fillLevel": 20,
+      "capacity": 500,
+      "fillRate": 6.5,
+      "threshold": 80,
+      "id": "BIN_2",
+      "dynamic_threshold": 68.8
+    },
+    {
+      "lat": 31.491772773722047,
+      "lng": 74.40438819382896,
+      "fillLevel": 20,
+      "capacity": 500,
+      "fillRate": 7.5,
+      "threshold": 80,
+      "id": "BIN_3",
+      "dynamic_threshold": 64.0
+    }
+  ],
+  "trucks": [
+    {
+      "lat": 31.4635918202747,
+      "lng": 74.4103190971637,
+      "capacity": 1000,
+      "speed": 50,
+      "currentLoad": 0,
+      "status": "idle",
+      "id": "TRUCK_1"
+    },
+    {
+      "lat": 31.463865870618932,
+      "lng": 74.41031725629576,
+      "capacity": 1000,
+      "speed": 50,
+      "currentLoad": 0,
+      "status": "idle",
+      "id": "TRUCK_2"
+    }
+  ],
+  "depots": [
+    {
+      "lat": 31.463865870618932,
+      "lng": 74.41031725629576,
+      "name": "Default Depot",
+      "id": "DEPOT_1"
+    }
+  ],
+  "schedules": [],
+  "id_counters": {
+    "bin": 3,
+    "truck": 2,
+    "depot": 1,
+    "schedule": 0
+  },
+  "metadata": {
+    "saved_at": "2025-12-16T01:54:47.546524",
+    "filename": "cleanify_system_20251216_015447.json",
+    "version": "2.0-simplified"
+  }
+}

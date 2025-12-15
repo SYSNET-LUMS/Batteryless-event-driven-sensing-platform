@@ -55,6 +55,7 @@ def batch_sync():
             depot_data['id'] = f"DEPOT_{i}"
             repo._depots.append(depot_data)
         repo._id_counters['depot'] = len(depots)
+        _apply_dynamic_thresholds(app, repo.get_bins())
         _rebuild_distance_matrix(app)
         return jsonify({'status': 'success'})
     except Exception as e:
@@ -67,3 +68,10 @@ def _rebuild_distance_matrix(app) -> None:
         return
     repo = app.system_repository
     service.build_matrices(repo.get_bins(), repo.get_depots(), force=True)
+
+
+def _apply_dynamic_thresholds(app, bins) -> None:
+    service = getattr(app, 'dynamic_threshold_service', None)
+    if not service or not bins:
+        return
+    service.apply_to_bins(bins)

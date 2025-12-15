@@ -32,6 +32,7 @@ def add_item(item_type):
         
         if item_type == 'bin':
             item = repo.add_bin(data)
+            _apply_dynamic_thresholds(app, [item])
         elif item_type == 'truck':
             item = repo.add_truck(data)
         elif item_type == 'depot':
@@ -64,6 +65,7 @@ def update_item(item_type):
         
         if item_type == 'bin':
             item = repo.update_bin(item_id, data)
+            _apply_dynamic_thresholds(app, [item] if item else None)
         elif item_type == 'truck':
             item = repo.update_truck(item_id, data)
         elif item_type == 'depot':
@@ -129,3 +131,10 @@ def _rebuild_distance_matrix_if_needed(app, item_type: str) -> None:
         app.system_repository.get_bins(),
         app.system_repository.get_depots(),
     )
+
+
+def _apply_dynamic_thresholds(app, bins) -> None:
+    service = getattr(app, 'dynamic_threshold_service', None)
+    if not service or not bins:
+        return
+    service.apply_to_bins(bins)

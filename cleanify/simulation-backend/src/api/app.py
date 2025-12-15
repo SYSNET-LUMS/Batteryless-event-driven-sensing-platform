@@ -12,6 +12,7 @@ from services.routing_service import RoutingService
 from services.file_service import FileService
 from services.schedule_service import ScheduleService
 from services.distance_matrix_service import DistanceMatrixService
+from services.dynamic_threshold_service import DynamicThresholdService
 from services.external.osrm_service import OSRMService
 from services.external.vroom_service import VROOMService
 from services.simulation.simulation_service import SimulationService
@@ -44,11 +45,14 @@ def create_app(config: Config = None) -> Flask:
     app.traffic_service = TrafficService(config)
     app.vroom_service = VROOMService(config)
     app.distance_matrix_service = DistanceMatrixService(app.osrm_service)
+    app.dynamic_threshold_service = DynamicThresholdService()
     app.distance_matrix_service.build_matrices(
         app.system_repository.get_bins(),
         app.system_repository.get_depots(),
         force=True,
     )
+    # Ensure any preloaded bins have DT annotations
+    app.dynamic_threshold_service.apply_to_bins(app.system_repository.get_bins())
     app.routing_service = RoutingService(config, osrm_service=app.osrm_service)
     app.simulation_service = SimulationService(
         app.osrm_service,
