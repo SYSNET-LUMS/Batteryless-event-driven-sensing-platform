@@ -117,6 +117,13 @@ Add more tests under `Cleanify/test/` following standard `pytest` discovery (`te
 
 ---
 
+## ✅ Health checks & performance probes (Dec 14 deliverable)
+- `GET /api/health/full?iterations=3` now publishes OSRM availability, VROOM health, and distance-cache rebuild timings in one response.
+- `cleanify/simulation-backend/scripts/run_health_checks.py` runs the same reporter offline so CI can store JSON artifacts.
+- See `docs/health_checks.md` for flow details and a sample output payload.
+
+---
+
 ## ⚙️ Setup & runtime
 ```bash
 # Install Python deps
@@ -169,5 +176,7 @@ cd cleanify/simulation-playground
 ## 📌 Decision changelog (so everyone knows Taimour’s tasks were handled)
 - **Dec 11:** API inventory completed; VROOM contract documented; urgency-based priority affirmed.
 - **Dec 12‑14:** Legacy broken tests removed; liter-based delivery tests added; time-window (critical-only) and service-time (fixed 300 s) decisions locked.
+
+See `docs/service_contracts.md` for the full API + VROOM contract snapshot beyond this README.
 
 These notes replace the spreadsheet action items, so future work can build directly on the documented choices.

@@ -1,5 +1,7 @@
 from flask import Blueprint, jsonify, request, current_app
 
+from services.health.service_health import ServiceHealthReporter
+
 bp = Blueprint('system', __name__, url_prefix='/api')
 
 @bp.route('/health', methods=['GET'])
@@ -10,6 +12,32 @@ def health_check():
         "message": "Minimalist backend running",
         "version": "2.0-minimalist"
     })
+
+
+@bp.route('/health/full', methods=['GET'])
+def health_check_full():
+    """Return OSRM, VROOM, and cache metrics with optional performance iterations."""
+    iterations_param = request.args.get('iterations', '1')
+    try:
+        iterations = max(1, int(iterations_param))
+    except ValueError:
+        iterations = 1
+
+    reporter = ServiceHealthReporter(
+        current_app.osrm_service,
+        current_app.vroom_service,
+        current_app.distance_matrix_service,
+    )
+
+    try:
+        report = reporter.collect(
+            bins=current_app.system_repository.get_bins(),
+            depots=current_app.system_repository.get_depots(),
+            iterations=iterations,
+        )
+        return jsonify({"status": "success", "report": report})
+    except Exception as exc:
+        return jsonify({"status": "error", "message": str(exc)}), 500
 
 @bp.route('/initialize', methods=['POST'])
 def initialize_system():

@@ -15,6 +15,25 @@ class VROOMService:
         self.config = config or Config()
         self.vroom_url = self.config.VROOM_URL
         self.timeout = self.config.VROOM_TIMEOUT
+
+    # ------------------------------------------------------------------
+    # Backwards-compatible helpers
+    # ------------------------------------------------------------------
+    def _build_vroom_payload(
+        self,
+        bins: List[Dict],
+        trucks: List[Dict],
+        depot: Dict,
+    ) -> Tuple[Dict, Dict, Dict]:
+        """Legacy helper retained for tests; delegates to the constraints builder."""
+
+        return self._build_vroom_payload_with_constraints(
+            bins=bins,
+            trucks=trucks,
+            depot=depot,
+            critical_bins=[],
+            simulation_time=0,
+        )
     
     def optimize_routes_with_constraints(
         self,
