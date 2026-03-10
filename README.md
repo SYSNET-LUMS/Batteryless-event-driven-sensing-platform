@@ -62,77 +62,35 @@ CAD source files (Fusion 360, STEP, STL) for all three iterations are in `hardwa
 
 ---
 
-## Setup & Installation
+## Setup & Usage
 
-### Prerequisites
-
-- Arduino IDE or Arduino CLI
-- ATmega328P board support (`arduino:avr`)
-- ESP32 board support (for field testing firmware)
-- Python 3.x with `pyserial` (for `data_collection.py`)
-
-### 1. Clone
+**Requirements:** Arduino IDE/CLI with ATmega328P and ESP32 board support, Python 3.x with `pyserial`.
 
 ```bash
 git clone <repository-url>
 cd Cleanify
-```
-
-### 2. Install Python dependencies
-
-```bash
 pip install pyserial
 ```
 
----
-
-## Usage
-
-### 1. Sensor Node (Prototype 2)
-
-Flash `transmitter-p2.ino` onto the ATmega328P sensor node:
+Flash sensor node and gateway firmware:
 
 ```bash
-arduino-cli compile --fqbn arduino:avr:pro firmware/sensor-node/
-arduino-cli upload  --fqbn arduino:avr:pro --port /dev/ttyUSB0 firmware/sensor-node/transmitter-p2.ino
-```
-
-Flash `receiver-p2.ino` onto the gateway-side node:
-
-```bash
+arduino-cli upload --fqbn arduino:avr:pro --port /dev/ttyUSB0 firmware/sensor-node/transmitter-p2.ino
 arduino-cli upload --fqbn arduino:avr:pro --port /dev/ttyUSB1 firmware/sensor-node/receiver-p2.ino
 ```
 
-On each lid actuation, the node executes:
-
-```
-Lid opens  → energy harvested into capacitor
-Lid closes → tilt switch connects buffer to electronics
-MCU boots  → HC-SR04 fires → fill level measured → LoRa packet transmitted → powers down
-```
-
-### 2. Field Testing / Lid Characterization
-
-Flash `data_collection.ino` onto the instrumented ESP32 bin:
+For lid characterization (ESP32 field testing):
 
 ```bash
-arduino-cli compile --fqbn esp32:esp32:esp32 firmware/field_testing/
-arduino-cli upload  --fqbn esp32:esp32:esp32 --port /dev/ttyUSB0 firmware/field_testing/data_collection.ino
-```
-
-Start the host-side logger:
-
-```bash
+arduino-cli upload --fqbn esp32:esp32:esp32 --port /dev/ttyUSB0 firmware/field_testing/data_collection.ino
 python firmware/field_testing/data_collection.py
 ```
-
-Logged fields per interaction: opening angle (°), opening duration (s), closing duration (s), timestamp.
 
 ---
 
 ## LoRa Packet Layout
 
-See `firmware/sensor-node/packet-layout.svg` for the full packet structure diagram.
+![LoRa Packet Layout](firmware/sensor-node/packet-layout.svg)
 
 | Field | Size | Description |
 |---|---|---|
