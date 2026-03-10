@@ -16,7 +16,7 @@ Cleanify is a batteryless smart bin sensor that harvests kinetic energy from bin
 
 ## Architecture
 
-![System Architecture](media\images\archi.png)
+![System Architecture](media/images/archi.png)
 
 | Component | Description |
 |:---|:---|
@@ -103,7 +103,7 @@ Cleanify/
 
 | Proof of Concept | Prototype 1 | Prototype 2 |
 |---|---|---|
-| ![PoC](media\images\poc.jpg) | ![P1](media\images\proto-1.jpg) | ![P2](media\images\proto-2.png) |
+| ![PoC](media/images/poc.jpg) | ![P1](media/images/proto-1.jpg) | ![P2](media/images/proto-2.png) |
 
 CAD source files (Fusion 360, STEP, STL) for all three iterations are in `hardware/cad/`. Physical build documentation is in `hardware/Physical Setup/`.
 
@@ -206,7 +206,7 @@ Five bins deployed sequentially across LUMS campus under real-world conditions (
 | L4 — Cafeteria | High traffic, rapid successive actuations |
 | L5 — Dormitories | Variable traffic, peaks morning and evening |
 
-![Field Deployment](media\images\proto-2.png)
+![Field Deployment](media/images/proto-2.png)
 
 Post-deployment inspection: zero water ingress, no corrosion, no mechanical degradation.
 
