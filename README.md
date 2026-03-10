@@ -30,53 +30,6 @@ Cleanify is a batteryless smart bin sensor that harvests kinetic energy from bin
 
 ---
 
-## 📂 Repository Structure
-
-```
-Cleanify/
-│
-├── firmware/
-│   ├── field_testing/
-│   │   ├── data_collection.ino     # Lid motion instrumentation firmware (ESP32)
-│   │   └── data_collection.py      # Host-side data logger
-│   │
-│   └── sensor-node/
-│       ├── transmitter-p2.ino      # Sensor node firmware (ATmega328P)
-│       ├── receiver-p2.ino         # Gateway receiver firmware
-│       ├── packet-layout.svg       # LoRa packet structure diagram
-│       └── README.md
-│
-├── hardware/
-│   ├── cad/
-│   │   ├── proof-of-concept/       # External disc mechanism (CAD files)
-│   │   ├── prototype-1-pendulum/   # Internal pendulum mechanism (CAD files)
-│   │   └── prototype-2-shaft/      # Final internal shaft mechanism (CAD files)
-│   │
-│   ├── Physical Setup/
-│   │   ├── proof-of-concept/       # Physical build photos/docs
-│   │   ├── prototype-1-pendulum/   # Physical build photos/docs
-│   │   └── prototype-2-shaft/      # Physical build photos/docs
-│   │
-│   └── pcb/
-│       ├── PCB_Design_Project.epro
-│       ├── NetList.tel
-│       ├── Schematic.pdf / schematic.png
-│       ├── pcb.png
-│       ├── README.md
-│       └── README.pdf
-│
-├── media/
-│   └── images/
-│       ├── deployment_map.png
-│       ├── proto_3.1.4.png         # Prototype 2 field photo
-│       ├── proto-1.1.jpg           # Prototype 1 physical build
-│       └── proto-2.1.jpg           # Prototype 2 physical build
-│
-└── README.md
-```
-
----
-
 ## Hardware
 
 ### Sensor Node
@@ -109,7 +62,7 @@ CAD source files (Fusion 360, STEP, STL) for all three iterations are in `hardwa
 
 ---
 
-## ⚙️ Setup & Installation
+## Setup & Installation
 
 ### Prerequisites
 
@@ -209,4 +162,3 @@ Five bins deployed sequentially across LUMS campus under real-world conditions (
 ![Field Deployment](media/images/proto-2.png)
 
 Post-deployment inspection: zero water ingress, no corrosion, no mechanical degradation.
-
