@@ -1,64 +1,148 @@
-# Cleanify: Smart Batteryless Waste Management System
+# Motion-Coupled Sensing: When the State Change Powers Its Own Sensing
 
-Cleanify is a batteryless smart bin sensor that harvests kinetic energy from bin lid motion to power fill-level sensing and LoRaWAN transmission — no batteries, no maintenance.
+A self-powered IoT platform that harvests kinetic energy from mechanical access events — bin lids, room doors, and office cabinet hinges — to power and transmit sensor readings with no batteries and no scheduled maintenance.
 
----
-
-## Highlights
-
-- **Batteryless Operation:** Kinetic energy harvested from every lid interaction powers a full sense-and-transmit cycle.
-- **Plug-and-Play Retrofit:** Attaches to standard hinged or foot-pedal bins without structural modification.
-- **LoRaWAN Communication:** Long-range, low-power transmission to a cloud backend for collection scheduling.
-- **Commodity Hardware:** Built entirely from locally available, low-cost components (~$53/unit at volume).
-- **Field Validated:** Deployed across 5 campus locations under real-world conditions.
+> **Experiment videos, setup photos, and build documentation:** [media/README.md](media/README.md)
 
 ---
 
-## Architecture
+## How It Works
 
-![System Architecture](media/images/archi.png)
+Objects whose state changes only through a mechanical action carry enough kinetic energy in that motion to power both a sensor reading and a LoRa uplink. The system wakes only when there is something to report, and the event itself supplies the energy to do it. There is no polling, no sleep schedule, and no battery to replace.
 
-| Component | Description |
+An electromagnetic harvester — a DC motor in generator mode driven through a compact gear train — is retrofitted to the hinge or lid mechanism without any structural modification to the host object.
+
+## Repository Structure
+
+```
+├── firmware/
+│   ├── sensor-node/                  # Sensor node and gateway firmware, packet-layout SVG
+│   └── bin_unit_field_testing/       # Bin lid characterization firmware + serial data logger
+├── hardware/
+│   ├── harvestor_cad/                # STEP, STL, SLDPRT, DXF files; CAD modeling video
+│   └── pcb/                          # PCB schematic, layout, EPRO project, netlist
+└── media/
+    └── images/
+        ├── bin-unit/                 # Bin unit build and deployment photos
+        ├── door-unit/                # Door unit build photos
+        ├── cabinet-unit/             # Cabinet unit build photos
+        └── harvestor.png             # Harvester overview image
+```
+
+---
+
+## Results at a Glance
+
+| Deployment | Actuations | Transmission Reliability |
+|:---|---:|---:|
+| Waste Bins — 5 campus locations | 5,945 | **99.3%** |
+| Room Doors | 289 | **87.2%** |
+| Office Cabinets | 206 | **89.3%** |
+
+---
+
+## Harvester
+
+![Harvester](media/images/harvestor.png)
+
+| Parameter | Value |
 |:---|:---|
-| **`firmware/sensor-node/transmitter-p2.ino`** | **Sensor Node Firmware:** Handles MCU boot, HC-SR04 ultrasonic sensing, and LoRa packet transmission on each lid actuation event. |
-| **`firmware/sensor-node/receiver-p2.ino`** | **Gateway-Side Receiver:** Receives LoRa packets and forwards data upstream. |
-| **`firmware/field_testing/data_collection.ino`** | **Lid Characterization Firmware:** Used during the user behavior study to log opening angle, duration, and encoder data. |
-| **`firmware/field_testing/data_collection.py`** | **Data Logger:** Receives and stores lid interaction data from the instrumented bin. |
-| **`hardware/cad/`** | **CAD Designs:** 3D models and source files for all three harvester iterations. |
-| **`hardware/Physical Setup/`** | **Physical Builds:** Photos and documentation of the physical implementations. |
-| **`hardware/pcb/`** | **PCB Design:** Schematic and layout files for the sensor node. |
+| Generator | 24V DC motor (generator mode) |
+| Gear Train | 3-stage spur, 1:42.6 ratio |
+| Storage | 1000 µF capacitor |
+| Gating | Mercury tilt switch + SS34 Schottky diode |
+
+CAD source files (STEP, STL, SolidWorks SLDPRT, DXF drawings, and drawing PDF) are in [`hardware/harvestor_cad/`](hardware/harvestor_cad/).
+
 
 ---
 
-## Hardware
-
-### Sensor Node
+## Sensor Node
 
 | Block | Components |
-|---|---|
-| Energy Harvesting | 24V DC motor (generator mode), 3-stage spur gear train (1:42.6 ratio) |
-| Storage & Gating | 1000µF capacitor, mercury tilt switch, SS34 Schottky diode |
+|:---|:---|
 | Sensing | HC-SR04 ultrasonic sensor |
 | Compute | ATmega328P MCU, MP2307 buck converter (3V rail) |
 | Communication | RA-02 LoRa module (Semtech SX1278) |
 
-![PCB Schematic](hardware/pcb/schematic.png)
+### PCB
 
-![PCB Layout](hardware/pcb/pcb.png)
+| Schematic | Layout |
+|:---:|:---:|
+| ![Schematic](hardware/pcb/schematic.png) | ![PCB Layout](hardware/pcb/pcb.png) |
 
-### Prototype Evolution
+Design files (EPRO project, netlist, schematic PDF) are in [`hardware/pcb/`](hardware/pcb/).
 
-| Version | Mechanism | Outcome |
-|---|---|---|
-| Proof of Concept | External disc gear | Feasibility validated; not deployment-ready |
-| Prototype 1 | Internal pendulum | Mechanical failure ~300 actuations; 132% weight overhead |
-| **Prototype 2** | **Internal shaft linkage** | **Final design — lightweight, robust, maintenance-free** |
+---
 
-| Proof of Concept | Prototype 1 | Prototype 2 |
-|---|---|---|
-| ![PoC](media/images/poc.jpg) | ![P1](media/images/proto-1.jpg) | ![P2](media/images/proto-2.png) |
+## Form Factors
 
-CAD source files (Fusion 360, STEP, STL) for all three iterations are in `hardware/cad/`. Physical build documentation is in `hardware/Physical Setup/`.
+### Waste Bin
+
+Measures fill level via ultrasonic ranging on every lid open. Deployed across 5 campus locations under real-world conditions (18–38°C, 40–85% humidity, occasional rainfall).
+
+| | | |
+|:---:|:---:|:---:|
+| ![Bin unit](media/images/bin-unit/IMG-20260107-WA0004.jpg) | ![Bin unit](media/images/bin-unit/IMG-20260107-WA0005.jpg) | ![Bin unit](media/images/bin-unit/IMG-20260107-WA0006.jpg) |
+| ![Bin unit](media/images/bin-unit/20260204_153932.jpg) | ![Bin unit](media/images/bin-unit/20260204_154037.jpg) | ![Bin unit](media/images/bin-unit/20260204_154052.jpg) |
+
+### Room Door
+
+Retrofit mounted to the door hinge. Reports each door swing as an access event.
+
+| | |
+|:---:|:---:|
+| ![Door unit](media/images/door-unit/20260503_033821~2.jpg.jpeg) | ![Door unit](media/images/door-unit/20260503_033846~2.jpg.jpeg) |
+
+### Office Cabinet
+
+Harvester mounted on the cabinet hinge. Reports each cabinet open as an access event.
+
+| | |
+|:---:|:---:|
+| ![Cabinet unit](media/images/cabinet-unit/20260430_194214~2.jpg.jpeg) | ![Cabinet unit](media/images/cabinet-unit/20260430_195602~2.jpg.jpeg) |
+
+---
+
+## Firmware
+
+| File | Purpose |
+|:---|:---|
+| [`firmware/sensor-node/transmitter-p2.ino`](firmware/sensor-node/transmitter-p2.ino) | Sensor node: MCU boot, ultrasonic sensing, LoRa uplink |
+| [`firmware/sensor-node/receiver-p2.ino`](firmware/sensor-node/receiver-p2.ino) | Gateway receiver: captures LoRa packets and forwards upstream |
+| [`firmware/bin_unit_field_testing/data_collection/data_collection.ino`](firmware/bin_unit_field_testing/data_collection/data_collection.ino) | Bin characterization: logs lid angle, duration, and encoder data |
+| [`firmware/bin_unit_field_testing/data_collection.py`](firmware/bin_unit_field_testing/data_collection.py) | Serial data logger: receives and stores lid interaction records |
+
+### LoRa Packet Layout
+
+![LoRa Packet Layout](firmware/sensor-node/packet-layout.svg)
+
+| Field | Size | Description |
+|:---|:---:|:---|
+| `device_id` | 2 bytes | Unique unit identifier |
+| `fill_level` | 2 bytes | HC-SR04 distance reading in cm (bin deployments) |
+| `timestamp` | 4 bytes | Unix timestamp of actuation |
+| `rssi` | 1 byte | Received signal strength (gateway-side) |
+
+LoRa physical layer: SF10, BW 125 kHz, CR 4/8, TX power 20 dBm.
+
+---
+
+## Bin Field Deployment
+
+![Deployment Map](media/images/deployment_map.png)
+
+Five units deployed sequentially across campus:
+
+| Location | Traffic Profile |
+|:---|:---|
+| L1 — Library | High traffic during academic hours |
+| L2 — Business School | Moderate–high traffic, peaks at class transitions |
+| L3 — Cafe Entrance | High traffic concentrated around meal times |
+| L4 — Cafeteria | High traffic, rapid successive actuations |
+| L5 — Dormitories | Variable traffic, peaks morning and evening |
+
+Post-deployment inspection across all units: zero water ingress, no corrosion, no mechanical degradation.
 
 ---
 
@@ -68,55 +152,20 @@ CAD source files (Fusion 360, STEP, STL) for all three iterations are in `hardwa
 
 ```bash
 git clone <repository-url>
-cd Cleanify
 pip install pyserial
 ```
 
-Flash sensor node and gateway firmware:
+Flash sensor node and gateway receiver:
 
 ```bash
 arduino-cli upload --fqbn arduino:avr:pro --port /dev/ttyUSB0 firmware/sensor-node/transmitter-p2.ino
 arduino-cli upload --fqbn arduino:avr:pro --port /dev/ttyUSB1 firmware/sensor-node/receiver-p2.ino
 ```
 
-For lid characterization (ESP32 field testing):
+For bin lid characterization (ESP32-based):
 
 ```bash
-arduino-cli upload --fqbn esp32:esp32:esp32 --port /dev/ttyUSB0 firmware/field_testing/data_collection.ino
-python firmware/field_testing/data_collection.py
+arduino-cli upload --fqbn esp32:esp32:esp32 --port /dev/ttyUSB0 firmware/bin_unit_field_testing/data_collection/data_collection.ino
+python firmware/bin_unit_field_testing/data_collection.py
 ```
 
----
-
-## LoRa Packet Layout
-
-![LoRa Packet Layout](firmware/sensor-node/packet-layout.svg)
-
-| Field | Size | Description |
-|---|---|---|
-| `device_id` | 2 bytes | Unique bin identifier |
-| `fill_level` | 2 bytes | HC-SR04 distance reading (cm) |
-| `timestamp` | 4 bytes | Unix timestamp of actuation |
-| `rssi` | 1 byte | Signal strength (gateway-side) |
-
-LoRa physical layer config: SF10, BW 125 kHz, CR 4/8, TX power 20 dBm.
-
----
-
-## Field Deployment
-
-![Deployment Map](media/images/deployment_map.png)
-
-Five bins deployed sequentially across LUMS campus under real-world conditions (18–38°C, 40–85% humidity, occasional rainfall):
-
-| Location | Description |
-|---|---|
-| L1 — Library | High traffic during academic hours |
-| L2 — Business School | Moderate–high traffic, peaks at class transitions |
-| L3 — Cafe Entrance | High traffic concentrated around meal times |
-| L4 — Cafeteria | High traffic, rapid successive actuations |
-| L5 — Dormitories | Variable traffic, peaks morning and evening |
-
-![Field Deployment](media/images/proto-2.png)
-
-Post-deployment inspection: zero water ingress, no corrosion, no mechanical degradation.
