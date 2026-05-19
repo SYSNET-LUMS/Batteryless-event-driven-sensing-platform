@@ -6,7 +6,7 @@ Experiment trials and build documentation for the motion-coupled sensing platfor
 
 ## Bin Field Deployment
 
-![Deployment Map](media/images/deployment_map.png)
+![Deployment Map](images/deployment_map.png)
 
 Five units deployed sequentially across campus:
 
