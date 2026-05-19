@@ -21,9 +21,9 @@ Five units deployed sequentially across campus:
 ---
 
 ## Door Unit 
-
+| | | | |
+|:---:|:---:|:---:|:---:|
 | ![](media/images/door-unit/door-01.png) | ![](media/images/door-unit/door-02.png) | ![](media/images/door-unit/door-03.png) | ![](media/images/door-unit/door-04.png) |
-|---|---|---|---|
 
 [Watch full trial on Drive](https://shorturl.at/BA1z8)
 
