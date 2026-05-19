@@ -40,7 +40,7 @@ Five units deployed sequentially across campus:
 
 ## Standalone Module Test — 10,000 Iterations
 
-| ![](hardware/harvestor_stress_testing/stress-01.png) | ![](hardware/harvestor_stress_testing/stress-02.png) | ![](hardware/harvestor_stress_testing/stress-03.png) | ![](hardware/harvestor_stress_testing/stress-04.png) |
+| ![](images/harvestor_stress_testing/stress-01.png) | ![](images/harvestor_stress_testing/stress-02.png) | ![](images/harvestor_stress_testing/stress-03.png) | ![](images/harvestor_stress_testing/stress-04.png) |
 |---|---|---|---|
 
 [Watch full test on Drive](https://tinyurl.com/yn5ekxc2)
