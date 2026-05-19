@@ -31,7 +31,7 @@ Five units deployed sequentially across campus:
 
 ## Cabinet Unit 
 
-| ![](media/images/cabinet-unit/cab-01.png) | ![](media/images/cabinet-unit/cab-02.png) | ![](media/images/cabinet-unit/cab-03.png) | ![](media/images/cabinet-unit/cab-04.png) |
+| ![](images/cabinet-unit/cab-01.png) | ![](images/cabinet-unit/cab-02.png) | ![](images/cabinet-unit/cab-03.png) | ![](images/cabinet-unit/cab-04.png) |
 |---|---|---|---|
 
 [Watch full trial on Drive]( https://shorturl.at/NqOQz)
