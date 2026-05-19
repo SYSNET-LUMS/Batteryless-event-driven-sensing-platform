@@ -36,8 +36,8 @@ An electromagnetic harvester — a DC motor in generator mode driven through a c
 | Deployment | Actuations | Transmission Reliability |
 |:---|---:|---:|
 | Waste Bins — 5 campus locations | 5,945 | **99.3%** |
-| Room Doors | 289 | **87.2%** |
-| Office Cabinets | 206 | **89.3%** |
+| Room Doors | 1870 | **92%** |
+| Office Cabinets | 1636 | **94%** |
 
 ---
 
