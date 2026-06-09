@@ -2,8 +2,6 @@
 
 A self-powered IoT platform that harvests kinetic energy from mechanical access events — bin lids, room doors, and office cabinet hinges — to power and transmit sensor readings with no batteries and no scheduled maintenance.
 
-> **Experiment videos, setup photos, and build documentation:** [media/README.md](media/README.md)
-
 ---
 
 ## How It Works
@@ -84,23 +82,42 @@ Measures fill level via ultrasonic ranging on every lid open. Deployed across 5 
 | | | |
 |:---:|:---:|:---:|
 | ![Bin unit](media/images/bin-unit/IMG-20260107-WA0004.jpg) | ![Bin unit](media/images/bin-unit/IMG-20260107-WA0005.jpg) | ![Bin unit](media/images/bin-unit/IMG-20260107-WA0006.jpg) |
-| ![Bin unit](media/images/bin-unit/20260204_153932.jpg) | ![Bin unit](media/images/bin-unit/20260204_154037.jpg) | ![Bin unit](media/images/bin-unit/20260204_154052.jpg) |
+| ![Bin unit](media/images/bin-unit/20260204_153932.jpg) | ![Bin unit](media/images/bin-unit/20260204_153938.jpg) | ![Bin unit](media/images/bin-unit/20260204_154037.jpg) |
+| ![Bin unit](media/images/bin-unit/20260204_154052.jpg) | ![Bin unit](media/images/bin-unit/20260204_154053.jpg) | ![Bin unit](media/images/bin-unit/20260204_154056.jpg) |
+| ![Bin unit](media/images/bin-unit/20260204_154058.jpg) | ![Bin unit](media/images/bin-unit/20260204_154131.jpg) | ![Bin unit](media/images/bin-unit/20260204_154154.jpg) |
+| ![Bin unit](media/images/bin-unit/20260204_154216.jpg) | ![Bin unit](media/images/bin-unit/20260204_154224.jpg) | |
 
 ### Room Door
 
 Retrofit mounted to the door hinge. Reports each door swing as an access event.
 
-| | |
-|:---:|:---:|
-| ![Door unit](media/images/door-unit/20260503_033821~2.jpg.jpeg) | ![Door unit](media/images/door-unit/20260503_033846~2.jpg.jpeg) |
+| | | | |
+|:---:|:---:|:---:|:---:|
+| ![Door unit](media/images/door-unit/door-01.png) | ![Door unit](media/images/door-unit/door-02.png) | ![Door unit](media/images/door-unit/door-03.png) | ![Door unit](media/images/door-unit/door-04.png) |
+
+[Watch full trial on Drive](https://shorturl.at/BA1z8)
 
 ### Office Cabinet
 
 Harvester mounted on the cabinet hinge. Reports each cabinet open as an access event.
 
-| | |
-|:---:|:---:|
-| ![Cabinet unit](media/images/cabinet-unit/20260430_194214~2.jpg.jpeg) | ![Cabinet unit](media/images/cabinet-unit/20260430_195602~2.jpg.jpeg) |
+| | | | |
+|:---:|:---:|:---:|:---:|
+| ![Cabinet unit](media/images/cabinet-unit/cab-01.png) | ![Cabinet unit](media/images/cabinet-unit/cab-02.png) | ![Cabinet unit](media/images/cabinet-unit/cab-03.png) | ![Cabinet unit](media/images/cabinet-unit/cab-04.png) |
+
+[Watch full trial on Drive](https://shorturl.at/NqOQz)
+
+---
+
+## Harvester Stress Testing — 10,000 Iterations
+
+Standalone module run to characterise mechanical durability before field deployment.
+
+| | | | |
+|:---:|:---:|:---:|:---:|
+| ![Stress test](media/images/harvestor_stress_testing/stress-01.png) | ![Stress test](media/images/harvestor_stress_testing/stress-02.png) | ![Stress test](media/images/harvestor_stress_testing/stress-03.png) | ![Stress test](media/images/harvestor_stress_testing/stress-04.png) |
+
+[Watch full test on Drive](https://tinyurl.com/yn5ekxc2)
 
 ---
 
