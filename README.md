@@ -83,9 +83,7 @@ Measures fill level via ultrasonic ranging on every lid open. Deployed across 5 
 |:---:|:---:|:---:|
 | ![Bin unit](media/images/bin-unit/IMG-20260107-WA0004.jpg) | ![Bin unit](media/images/bin-unit/IMG-20260107-WA0005.jpg) | ![Bin unit](media/images/bin-unit/IMG-20260107-WA0006.jpg) |
 | ![Bin unit](media/images/bin-unit/20260204_153932.jpg) | ![Bin unit](media/images/bin-unit/20260204_153938.jpg) | ![Bin unit](media/images/bin-unit/20260204_154037.jpg) |
-| ![Bin unit](media/images/bin-unit/20260204_154052.jpg) | ![Bin unit](media/images/bin-unit/20260204_154053.jpg) | ![Bin unit](media/images/bin-unit/20260204_154056.jpg) |
-| ![Bin unit](media/images/bin-unit/20260204_154058.jpg) | ![Bin unit](media/images/bin-unit/20260204_154131.jpg) | ![Bin unit](media/images/bin-unit/20260204_154154.jpg) |
-| ![Bin unit](media/images/bin-unit/20260204_154216.jpg) | ![Bin unit](media/images/bin-unit/20260204_154224.jpg) | |
+
 
 ### Room Door
 
