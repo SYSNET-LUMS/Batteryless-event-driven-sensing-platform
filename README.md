@@ -19,6 +19,9 @@ An electromagnetic harvester — a DC motor in generator mode driven through a c
 ├── hardware/
 │   ├── harvestor_cad/                # STEP, STL, SLDPRT, DXF files; CAD modeling video
 │   └── pcb/                          # PCB schematic, layout, EPRO project, netlist
+├── bin_depth_analysis/
+│   ├── Images/                       # Per-run averaged depth and RGB frames (run1–50)
+│   └── Wall Masks/                   # Masked depth averages for wall-plane isolation (run1–15)
 └── media/
     └── images/
         ├── bin-unit/                 # Bin unit build and deployment photos
@@ -158,6 +161,20 @@ Five units deployed sequentially across campus:
 | L5 — Dormitories | Variable traffic, peaks morning and evening |
 
 Post-deployment inspection across all units: zero water ingress, no corrosion, no mechanical degradation.
+
+---
+
+## Bin Depth Analysis
+
+50 depth + RGB recording runs captured inside the bin to characterise interior geometry and validate fill-level sensing. Each run produces a time-averaged depth frame and a corresponding RGB frame; a wall-mask subset (runs 1–15) isolates the bin wall plane for background calibration.
+
+| RGB Average | Depth Average |
+|:---:|:---:|
+| ![Run 1 RGB](bin_depth_analysis/Images/run1_rgb_avg.png) | ![Run 1 Depth](bin_depth_analysis/Images/run1_depth_avg.png) |
+| ![Run 2 RGB](bin_depth_analysis/Images/run2_rgb_avg.png) | ![Run 2 Depth](bin_depth_analysis/Images/run2_depth_avg.png) |
+| ![Run 3 RGB](bin_depth_analysis/Images/run3_rgb_avg.png) | ![Run 3 Depth](bin_depth_analysis/Images/run3_depth_avg.png) |
+
+Raw `.bag` recordings (50 runs): [Download from SharePoint](https://pern-my.sharepoint.com/:f:/g/personal/baig_muhammad_lums_edu_pk/IgDPkcKNrldGRr3JelqhKEQdAa63hqt8INTA9sXD9E0Jkpo?e=6519Ol)
 
 ---
 
