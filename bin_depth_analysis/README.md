@@ -12,7 +12,7 @@ This folder contains the full analysis workflow for the Batteryless Event-Driven
 ## Folder Structure
 
 ```
-analysis/
+bin_depth_analysis/
 ├── README.md (this file)
 ├── rectangle_coordinates.json       # ROI definitions for all 50 runs
 │
@@ -22,13 +22,13 @@ analysis/
 │                                           # - Extracts RealSense depth/RGB frames
 │                                           # - Generates 2D & 3D visualizations
 │
-├── raw_runs/                        # Raw sensor data (ROS bag format)
+├── [raw_runs/ — hosted externally]  # Raw sensor data (ROS bag format)
 │   ├── run1.bag through run50.bag   # 50 bags, ~11 GB total
 │   │                                # Each contains:
 │   │                                # - RealSense D455 depth (640×480 @30fps, 16-bit)
 │   │                                # - Synchronized RGB frames (640×480 @30fps)
 │   │                                # - Camera intrinsics & timestamps
-│   └── ...
+│   └── Download: https://pern-my.sharepoint.com/:f:/g/personal/baig_muhammad_lums_edu_pk/IgDPkcKNrldGRr3JelqhKEQdAa63hqt8INTA9sXD9E0Jkpo?e=6519Ol
 │
 ├── baseline_ultrasonic/             # HC-SR04 sensor calibration
 │   └── baseline_ultrasonic_values.txt       # Original measurement file
@@ -37,8 +37,8 @@ analysis/
 │   ├── run1_rgb_avg.png through run50_rgb_avg.png      (RGB averages)
 │   └── run1_depth_avg.png through run50_depth_avg.png  (Depth averages)
 │
-├── Wall Masks/                      # Wall exclusion masks (50 runs)
-│   ├── run1_depth_avg.png through run50_depth_avg.png
+├── Wall Masks/                      # Wall exclusion masks (15 runs)
+│   ├── run1_depth_avg.png through run15_depth_avg.png
 │   │                                # Binary masks for interior vs wall regions
 │   │                                # Used to exclude container walls from analysis
 │   └── ...
@@ -56,10 +56,12 @@ analysis/
 ## Data Formats
 
 ### ROS Bag Files (raw_runs/)
+Raw recordings are hosted externally due to size (~11 GB total). [Download from SharePoint](https://pern-my.sharepoint.com/:f:/g/personal/baig_muhammad_lums_edu_pk/IgDPkcKNrldGRr3JelqhKEQdAa63hqt8INTA9sXD9E0Jkpo?e=6519Ol)
+
 Binary ROS message format containing timestamped sensor data. Extract with:
 ```bash
-rosbag info analysis/raw_runs/run1.bag
-rosbag play analysis/raw_runs/run1.bag
+rosbag info run1.bag
+rosbag play run1.bag
 ```
 
 ### ROI Coordinates (rectangle_coordinates.json)
@@ -151,7 +153,7 @@ ULTRASONIC_CM = {
 ## Workflow
 
 ```
-raw_runs/ .bag files
+raw_runs/ .bag files  (download from SharePoint)
     ↓
 [Extract depth + RGB frames with pyrealsense2]
     ↓
